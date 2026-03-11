@@ -19,8 +19,10 @@ export default function Login() {
         setError('Popup was blocked by your browser. Please allow popups for this site.');
       } else if (error.code === 'auth/cancelled-popup-request') {
         setError('Login was cancelled. Please try again.');
+      } else if (error.code === 'auth/unauthorized-domain') {
+        setError('This domain is not authorized for login. Please add ' + window.location.hostname + ' to your Firebase Authorized Domains.');
       } else {
-        setError('An error occurred during login. Please try again.');
+        setError(`Login error (${error.code || 'unknown'}): ${error.message || 'Please try again.'}`);
       }
     } finally {
       setLoading(false);
