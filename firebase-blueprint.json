@@ -1,0 +1,97 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores additional user information like UG number and custom profile details.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The unique identifier for the user."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "The user's display name."
+        },
+        "email": {
+          "type": "string",
+          "description": "The user's email address."
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "The user's profile picture URL."
+        },
+        "ugNumber": {
+          "type": "string",
+          "description": "The user's Undergraduate (UG) number."
+        },
+        "bio": {
+          "type": "string",
+          "description": "A short biography about the user."
+        },
+        "lastSeen": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The last time the user was active in the app."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The last time the profile was updated."
+        }
+      },
+      "required": ["uid", "displayName", "email"]
+    },
+    "StudyGroup": {
+      "title": "Study Group",
+      "description": "A group of students studying a specific course together.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "courseId": { "type": "string" },
+        "description": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastActive": { "type": "string", "format": "date-time" },
+        "memberCount": { "type": "integer" }
+      },
+      "required": ["name", "courseId", "createdBy"]
+    },
+    "GroupMember": {
+      "title": "Group Member",
+      "description": "A student who is a member of a study group.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "joinedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Collection of user profiles."
+    },
+    "/studyGroups/{groupId}": {
+      "schema": "StudyGroup",
+      "description": "Collection of all study groups."
+    },
+    "/studyGroups/{groupId}/members/{userId}": {
+      "schema": "GroupMember",
+      "description": "Subcollection of members within a study group."
+    },
+    "/studyGroups/{groupId}/presence/{userId}": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "lastSeen": { "type": "string", "format": "date-time" }
+        }
+      },
+      "description": "Subcollection to track real-time presence of users in a group."
+    }
+  }
+}

@@ -1,0 +1,139 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (matches request.auth.uid)
+    // Fields:
+    //   - uid: string (required) - The unique identifier for the user.
+    //   - displayName: string (required) - The user's display name.
+    //   - email: string (required) - The user's email address.
+    //   - photoURL: string (optional) - The user's profile picture URL.
+    //   - ugNumber: string (optional) - The user's Undergraduate (UG) number.
+    //   - bio: string (optional) - A short biography about the user.
+    //   - updatedAt: string (optional) - The last time the profile was updated.
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isGoogleUser() {
+      return isAuthenticated() && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "loveyouaudley@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUrl(url) {
+      return url is string &&
+        (url == "" || url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUserProfile(data) {
+      return isGoogleUser() &&
+             data.keys().hasAll(['uid', 'displayName', 'email']) &&
+             data.uid is string && data.uid.size() > 0 &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100 &&
+             data.email is string && isValidEmail(data.email) &&
+             (!('photoURL' in data) || isValidUrl(data.photoURL)) &&
+             (!('ugNumber' in data) || (data.ugNumber is string && data.ugNumber.size() < 20)) &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() < 500)) &&
+             (!('lastSeen' in data) || data.lastSeen is timestamp) &&
+             (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidStudyGroup(data) {
+      return isGoogleUser() &&
+             data.keys().hasAll(['name', 'courseId', 'createdBy']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.courseId is string &&
+             data.createdBy == request.auth.uid &&
+             (!('description' in data) || (data.description is string && data.description.size() < 500)) &&
+             (!('createdAt' in data) || data.createdAt is timestamp) &&
+             (!('lastActive' in data) || data.lastActive is timestamp) &&
+             (!('memberCount' in data) || data.memberCount is number);
+    }
+
+    function isValidGroupMember(data) {
+      return isGoogleUser() &&
+             data.keys().hasAll(['uid', 'displayName']) &&
+             data.uid == request.auth.uid &&
+             data.displayName is string && data.displayName.size() > 0 &&
+             (!('photoURL' in data) || isValidUrl(data.photoURL)) &&
+             (!('joinedAt' in data) || data.joinedAt is timestamp);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      // Users can only read their own profile.
+      allow read: if isOwner(userId) || isAdmin();
+      
+      allow create: if isOwner(userId) && isValidUserProfile(request.resource.data);
+      
+      allow update: if isOwner(userId) && isValidUserProfile(request.resource.data) &&
+                      request.resource.data.uid == resource.data.uid &&
+                      request.resource.data.email == resource.data.email;
+      
+      allow delete: if isAdmin();
+    }
+
+    match /studyGroups/{groupId} {
+      allow read: if isAuthenticated();
+      allow create: if isGoogleUser() && isValidStudyGroup(request.resource.data);
+      allow update: if isGoogleUser() && (
+        // Creator can update group details
+        (resource.data.createdBy == request.auth.uid && isValidStudyGroup(request.resource.data)) ||
+        // Anyone can increment/decrement memberCount (simplified for this example)
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount', 'lastActive']))
+      );
+      allow delete: if isAuthenticated() && (resource.data.createdBy == request.auth.uid || isAdmin());
+
+      match /members/{userId} {
+        allow read: if isAuthenticated();
+        allow create, update: if isOwner(userId) && isGoogleUser() && isValidGroupMember(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /presence/{userId} {
+        allow read: if isAuthenticated();
+        allow create, update: if isOwner(userId) && isGoogleUser() && 
+                               request.resource.data.keys().hasAll(['lastSeen']) &&
+                               request.resource.data.lastSeen is timestamp;
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // Default deny
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}
