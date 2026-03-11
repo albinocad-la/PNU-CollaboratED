@@ -1,14 +1,29 @@
 import { auth, googleProvider } from '../firebase';
 import { signInWithPopup } from 'firebase/auth';
 import { motion } from 'motion/react';
-import { LogIn } from 'lucide-react';
+import { LogIn, Loader2, AlertCircle } from 'lucide-react';
+import { useState } from 'react';
 
 export default function Login() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const handleLogin = async () => {
+    setLoading(true);
+    setError(null);
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login failed:', error);
+      if (error.code === 'auth/popup-blocked') {
+        setError('Popup was blocked by your browser. Please allow popups for this site.');
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        setError('Login was cancelled. Please try again.');
+      } else {
+        setError('An error occurred during login. Please try again.');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -25,12 +40,26 @@ export default function Login() {
         <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">PNU CollaboratED</h1>
         <p className="text-slate-400 mb-8">Collaborate, study, and excel with your peers at Philippine Normal University.</p>
         
+        {error && (
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-400 text-sm text-left">
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <p>{error}</p>
+          </div>
+        )}
+
         <button 
           onClick={handleLogin}
-          className="w-full flex items-center justify-center gap-3 bg-white text-slate-900 py-4 px-6 rounded-2xl font-bold hover:bg-slate-100 transition-all active:scale-95 shadow-lg"
+          disabled={loading}
+          className={`w-full flex items-center justify-center gap-3 bg-white text-slate-900 py-4 px-6 rounded-2xl font-bold transition-all active:scale-95 shadow-lg ${
+            loading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-slate-100'
+          }`}
         >
-          <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5" />
-          Sign in with Google
+          {loading ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : (
+            <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5" />
+          )}
+          {loading ? 'Signing in...' : 'Sign in with Google'}
         </button>
         
         <p className="mt-8 text-xs text-slate-500">
