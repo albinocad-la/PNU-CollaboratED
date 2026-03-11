@@ -1,20 +1,33 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# PNU CollaboratED - Netlify Deployment Guide
 
-# Run and deploy your AI Studio app
+This project is ready to be deployed to Netlify. Follow these steps:
 
-This contains everything you need to run your app locally.
+## 1. Connect to Netlify
+- Push your code to a GitHub/GitLab/Bitbucket repository.
+- Log in to [Netlify](https://www.netlify.com/) and click **"Add new site"** > **"Import an existing project"**.
+- Select your repository.
 
-View your app in AI Studio: https://ai.studio/apps/30ab3011-d96d-45ee-af0f-1f1551a69efb
+## 2. Build Settings
+The project includes a `netlify.toml` file that automatically configures these settings:
+- **Build command:** `npm run build`
+- **Publish directory:** `dist`
+- **Redirects:** Configured to handle Single Page Application (SPA) routing.
 
-## Run Locally
+## 3. Environment Variables
+You **must** configure the following environment variables in the Netlify dashboard (**Site settings** > **Environment variables**):
 
-**Prerequisites:**  Node.js
+| Variable | Description |
+|----------|-------------|
+| `VITE_FIREBASE_API_KEY` | Your Firebase API Key |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Your Firebase Auth Domain |
+| `VITE_FIREBASE_PROJECT_ID` | Your Firebase Project ID |
+| `VITE_FIREBASE_APP_ID` | Your Firebase App ID |
+| `VITE_FIREBASE_FIRESTORE_DATABASE_ID` | Your Firestore Database ID |
+| `GEMINI_API_KEY` | Your Google Gemini API Key |
 
+> **Note:** You can find these values in your `firebase-applet-config.json` file.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## 4. Google Auth Setup
+In the [Firebase Console](https://console.firebase.google.com/):
+1. Go to **Authentication** > **Settings** > **Authorized domains**.
+2. Add your Netlify site URL (e.g., `your-site-name.netlify.app`) to the list.
