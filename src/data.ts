@@ -1,33 +1,50 @@
-import { Course, Assignment, StudyGroup, Message, ReviewDeck, Flashcard, Chat } from './types';
+import { Course, Assignment, Message, ReviewDeck, Flashcard, Chat } from './types';
 
 export const courses: Course[] = [
-  { id: 'uts', name: 'Understanding the Self', code: 'GEC-UTS', color: 'bg-blue-500' },
-  { id: 'rph', name: 'Readings in Philippine History', code: 'GEC-RPH', color: 'bg-emerald-500' },
-  { id: 'tcw', name: 'The Contemporary World', code: 'GEC-TCW', color: 'bg-amber-500' },
-  { id: 'mmw', name: 'Mathematics in the Modern World', code: 'GEC-MMW', color: 'bg-purple-500' },
-  { id: 'pc', name: 'Purposive Communication', code: 'GEC-PC', color: 'bg-rose-500' },
-  { id: 'sts', name: 'Science, Technology, and Society', code: 'GEC-STS', color: 'bg-cyan-500' },
-  { id: 'eth', name: 'Ethics', code: 'GEC-ETH', color: 'bg-indigo-500' },
-  { id: 'lwr', name: 'Life and Works of Rizal', code: 'GEC-LWR', color: 'bg-orange-500' },
-  { id: 'aa', name: 'Art Appreciation', code: 'GEC-AA', color: 'bg-teal-500' },
+  { 
+    id: 'uts', 
+    name: 'Understanding the Self', 
+    code: 'GEC-UTS', 
+    color: 'bg-blue-500',
+    materials: []
+  },
+  { 
+    id: 'rph', 
+    name: 'Readings in Philippine History', 
+    code: 'GEC-RPH', 
+    color: 'bg-emerald-500',
+    materials: []
+  },
+  { 
+    id: 'tcw', 
+    name: 'The Contemporary World', 
+    code: 'GEC-TCW', 
+    color: 'bg-amber-500',
+    materials: []
+  },
+  { 
+    id: 'mmw', 
+    name: 'Mathematics in the Modern World', 
+    code: 'GEC-MMW', 
+    color: 'bg-purple-500',
+    materials: []
+  },
+  { id: 'pc', name: 'Purposive Communication', code: 'GEC-PC', color: 'bg-rose-500', materials: [] },
+  { id: 'sts', name: 'Science, Technology, and Society', code: 'GEC-STS', color: 'bg-cyan-500', materials: [] },
+  { id: 'eth', name: 'Ethics', code: 'GEC-ETH', color: 'bg-indigo-500', materials: [] },
+  { id: 'lwr', name: 'Life and Works of Rizal', code: 'GEC-LWR', color: 'bg-orange-500', materials: [] },
+  { id: 'aa', name: 'Art Appreciation', code: 'GEC-AA', color: 'bg-teal-500', materials: [] },
 ];
 
 export const assignments: Assignment[] = [];
 
-export const studyGroups: StudyGroup[] = [
-  { id: 'g1', name: 'UTS Discussion Circle', courseId: 'uts', membersCount: 5, lastActive: '2 hours ago' },
-  { id: 'g2', name: 'RPH History Buffs', courseId: 'rph', membersCount: 8, lastActive: '1 day ago' },
-  { id: 'g3', name: 'MMW Problem Solvers', courseId: 'mmw', membersCount: 12, lastActive: '5 mins ago' },
-  { id: 'g4', name: 'Art Enthusiasts', courseId: 'aa', membersCount: 6, lastActive: '1 hour ago' },
-];
-
 export const messages: Message[] = [
-  { id: 'm1', chatId: 'uts', sender: 'Alice', avatar: 'https://i.pravatar.cc/150?u=alice', content: 'Has anyone finished the essay for Understanding the Self?', timestamp: '10:30 AM', isMe: false },
-  { id: 'm2', chatId: 'uts', sender: 'Bob', avatar: 'https://i.pravatar.cc/150?u=bob', content: 'I\'m halfway through. The reflection part is quite deep.', timestamp: '10:32 AM', isMe: false },
-  { id: 'm3', chatId: 'uts', sender: 'You', avatar: 'https://i.pravatar.cc/150?u=me', content: 'I found a good resource for the psychological perspective if anyone needs it.', timestamp: '10:35 AM', isMe: true },
-  { id: 'm4', chatId: 'uts', sender: 'Bob', avatar: 'https://i.pravatar.cc/150?u=bob', content: 'That would be great! Please share.', timestamp: '10:36 AM', isMe: false },
-  { id: 'm5', chatId: 'rph', sender: 'Charlie', avatar: 'https://i.pravatar.cc/150?u=charlie', content: 'Don\'t forget our quiz on Philippine History tomorrow!', timestamp: '09:15 AM', isMe: false },
-  { id: 'm6', chatId: 'mmw', sender: 'Diana', avatar: 'https://i.pravatar.cc/150?u=diana', content: 'Does anyone understand the Golden Ratio part?', timestamp: '02:45 PM', isMe: false },
+  { id: 'm1', chatId: 'uts', senderId: 'u1', senderName: 'Alice', senderAvatar: 'https://i.pravatar.cc/150?u=alice', content: 'Has anyone finished the essay for Understanding the Self?', timestamp: '10:30 AM' },
+  { id: 'm2', chatId: 'uts', senderId: 'u2', senderName: 'Bob', senderAvatar: 'https://i.pravatar.cc/150?u=bob', content: 'I\'m halfway through. The reflection part is quite deep.', timestamp: '10:32 AM' },
+  { id: 'm3', chatId: 'uts', senderId: 'me', senderName: 'You', senderAvatar: 'https://i.pravatar.cc/150?u=me', content: 'I found a good resource for the psychological perspective if anyone needs it.', timestamp: '10:35 AM' },
+  { id: 'm4', chatId: 'uts', senderId: 'u2', senderName: 'Bob', senderAvatar: 'https://i.pravatar.cc/150?u=bob', content: 'That would be great! Please share.', timestamp: '10:36 AM' },
+  { id: 'm5', chatId: 'rph', senderId: 'u3', senderName: 'Charlie', senderAvatar: 'https://i.pravatar.cc/150?u=charlie', content: 'Don\'t forget our quiz on Philippine History tomorrow!', timestamp: '09:15 AM' },
+  { id: 'm6', chatId: 'mmw', senderId: 'u4', senderName: 'Diana', senderAvatar: 'https://i.pravatar.cc/150?u=diana', content: 'Does anyone understand the Golden Ratio part?', timestamp: '02:45 PM' },
 ];
 
 export const chats: Chat[] = [
@@ -35,17 +52,38 @@ export const chats: Chat[] = [
     id: course.id,
     name: course.name,
     type: 'course' as const,
+    participants: [],
     lastMessage: 'Welcome to the ' + course.code + ' group chat!',
     lastActive: 'Just now',
     color: course.color
   })),
-  ...studyGroups.map(group => ({
-    id: group.id,
-    name: group.name,
-    type: 'group' as const,
-    lastMessage: 'Active discussion in progress...',
-    lastActive: group.lastActive
-  }))
+  {
+    id: 'dm1',
+    name: 'Alice Johnson',
+    type: 'direct',
+    participants: [],
+    lastMessage: 'Hey, did you see the notes?',
+    lastActive: '2m ago',
+    avatar: 'https://i.pravatar.cc/150?u=alice'
+  },
+  {
+    id: 'dm2',
+    name: 'Bob Smith',
+    type: 'direct',
+    participants: [],
+    lastMessage: 'Thanks for the help!',
+    lastActive: '1h ago',
+    avatar: 'https://i.pravatar.cc/150?u=bob'
+  },
+  {
+    id: 'dm3',
+    name: 'Charlie Davis',
+    type: 'direct',
+    participants: [],
+    lastMessage: 'See you tomorrow!',
+    lastActive: 'Yesterday',
+    avatar: 'https://i.pravatar.cc/150?u=charlie'
+  }
 ];
 
 export const reviewDecks: ReviewDeck[] = [

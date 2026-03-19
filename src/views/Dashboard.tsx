@@ -3,7 +3,6 @@ import { courses, assignments, reviewDecks, chats } from '../data';
 import { Clock, CheckCircle2, AlertCircle, BookOpen, Layers, ArrowRight, MessageCircle, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { User } from 'firebase/auth';
-import { subscribeToStudyGroups, StudyGroup } from '../services/studyGroupService';
 import { db } from '../firebase';
 import { collection, query, where, Timestamp, onSnapshot } from 'firebase/firestore';
 
@@ -18,33 +17,15 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ onCourseClick, onChatClick, onViewAllCourses, onViewCalendar, user, profile }: DashboardProps) {
-  const [groups, setGroups] = useState<StudyGroup[]>([]);
-  const [activeGroupsCount, setActiveGroupsCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = subscribeToStudyGroups((fetchedGroups) => {
-      setGroups(fetchedGroups);
-      setLoading(false);
-    });
-    return () => unsubscribe();
+    // Simulate loading for other dashboard data if needed, or just set to false
+    setLoading(false);
   }, []);
-
-  useEffect(() => {
-    // This is a bit complex to do for all groups at once in Firestore without a cloud function
-    // But we can estimate "active" groups by checking their lastActive field
-    // A group is "active" if someone interacted with it in the last 5 minutes
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-    const active = groups.filter(g => {
-      const lastActive = g.lastActive?.toDate ? g.lastActive.toDate() : new Date(g.lastActive);
-      return lastActive > fiveMinutesAgo;
-    });
-    setActiveGroupsCount(active.length);
-  }, [groups]);
 
   const recentDecks = reviewDecks.slice(0, 2);
   
-  const mostActiveChat = groups[0] || chats[0];
   const displayName = profile?.displayName || user.displayName || 'Student';
 
   return (
@@ -59,23 +40,7 @@ export default function Dashboard({ onCourseClick, onChatClick, onViewAllCourses
         <div className="relative z-10">
           <h2 className="text-2xl sm:text-3xl font-bold mb-2">Welcome back, {displayName}! 👋</h2>
           <div className="text-indigo-100 text-base sm:text-lg max-w-xl space-y-1">
-            {loading ? (
-              <div className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <p className="text-sm">Checking active groups...</p>
-              </div>
-            ) : (
-              <>
-                <p>
-                  You have <span className="font-bold text-white">{activeGroupsCount}</span> study groups active right now.
-                </p>
-                {mostActiveChat && (
-                  <p className="text-sm opacity-90 italic">
-                    Trending: <span className="font-semibold text-white">#{mostActiveChat.name}</span> is very active today!
-                  </p>
-                )}
-              </>
-            )}
+            <p>Ready to start your study session? Check your courses and review decks below.</p>
           </div>
         </div>
         <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>

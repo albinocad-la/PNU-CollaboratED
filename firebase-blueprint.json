@@ -42,33 +42,69 @@
       },
       "required": ["uid", "displayName", "email"]
     },
-    "StudyGroup": {
-      "title": "Study Group",
-      "description": "A group of students studying a specific course together.",
+    "Todo": {
+      "title": "To-do Item",
+      "description": "A task for a specific user on a specific date.",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "name": { "type": "string" },
-        "courseId": { "type": "string" },
-        "description": { "type": "string" },
-        "createdBy": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "lastActive": { "type": "string", "format": "date-time" },
-        "memberCount": { "type": "integer" }
+        "userId": { "type": "string" },
+        "date": { "type": "string", "description": "Date in YYYY-MM-DD format" },
+        "text": { "type": "string" },
+        "completed": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["name", "courseId", "createdBy"]
+      "required": ["userId", "date", "text", "completed"]
     },
-    "GroupMember": {
-      "title": "Group Member",
-      "description": "A student who is a member of a study group.",
+    "LearningMaterial": {
+      "title": "Learning Material",
+      "description": "A study resource for a specific course.",
       "type": "object",
       "properties": {
-        "uid": { "type": "string" },
-        "displayName": { "type": "string" },
-        "photoURL": { "type": "string" },
-        "joinedAt": { "type": "string", "format": "date-time" }
+        "id": { "type": "string" },
+        "courseId": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string", "enum": ["pdf", "study-guide", "video", "link"] },
+        "url": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "addedBy": { "type": "string" }
       },
-      "required": ["uid", "displayName"]
+      "required": ["courseId", "title", "type", "url", "addedBy"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "A chat conversation between users or a course group",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The unique identifier for the chat." },
+        "name": { "type": "string", "description": "The name of the chat or course." },
+        "type": { "type": "string", "enum": ["direct", "course", "group"], "description": "The type of chat." },
+        "participants": { "type": "array", "items": { "type": "string" }, "description": "List of user UIDs in the chat." },
+        "lastMessage": { "type": "string", "description": "The content of the last message sent." },
+        "lastActive": { "type": "string", "format": "date-time", "description": "Timestamp of the last activity." },
+        "avatar": { "type": "string", "description": "URL of the chat avatar (for direct chats)." },
+        "color": { "type": "string", "description": "Tailwind color class (for course chats)." },
+        "code": { "type": "string", "description": "Course code (for course chats)." }
+      },
+      "required": ["type", "participants"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A message within a chat",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The unique identifier for the message." },
+        "chatId": { "type": "string", "description": "The ID of the parent chat." },
+        "senderId": { "type": "string", "description": "The UID of the sender." },
+        "senderName": { "type": "string", "description": "The display name of the sender." },
+        "senderAvatar": { "type": "string", "description": "The photo URL of the sender." },
+        "content": { "type": "string", "description": "The text content of the message." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "When the message was sent." },
+        "type": { "type": "string", "enum": ["text", "image", "file"], "description": "The type of message content." },
+        "fileUrl": { "type": "string", "description": "URL of the attached file/image." },
+        "fileName": { "type": "string", "description": "Original name of the attached file." }
+      },
+      "required": ["chatId", "senderId", "content", "timestamp"]
     }
   },
   "firestore": {
@@ -76,22 +112,21 @@
       "schema": "UserProfile",
       "description": "Collection of user profiles."
     },
-    "/studyGroups/{groupId}": {
-      "schema": "StudyGroup",
-      "description": "Collection of all study groups."
+    "/todos/{todoId}": {
+      "schema": "Todo",
+      "description": "Collection of to-do items for all users."
     },
-    "/studyGroups/{groupId}/members/{userId}": {
-      "schema": "GroupMember",
-      "description": "Subcollection of members within a study group."
+    "/materials/{materialId}": {
+      "schema": "LearningMaterial",
+      "description": "Collection of all learning materials for all courses."
     },
-    "/studyGroups/{groupId}/presence/{userId}": {
-      "schema": {
-        "type": "object",
-        "properties": {
-          "lastSeen": { "type": "string", "format": "date-time" }
-        }
-      },
-      "description": "Subcollection to track real-time presence of users in a group."
+    "/chats/{chatId}": {
+      "schema": "Chat",
+      "description": "Collection of all chat conversations."
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Subcollection of messages within a chat."
     }
   }
 }

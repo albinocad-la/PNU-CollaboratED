@@ -33,7 +33,7 @@ export const updateGroupPresence = async (groupId: string) => {
   const user = auth.currentUser;
   if (!user) return;
 
-  const presenceRef = doc(db, 'studyGroups', groupId, 'presence', user.uid);
+  const presenceRef = doc(db, 'chats', groupId, 'presence', user.uid);
   try {
     await setDoc(presenceRef, { lastSeen: serverTimestamp() }, { merge: true });
   } catch (error) {
@@ -53,7 +53,7 @@ export const useGroupOnlineStatus = (groupId: string) => {
     // Check for presence in the last 2 minutes
     const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
     const q = query(
-      collection(db, 'studyGroups', groupId, 'presence'),
+      collection(db, 'chats', groupId, 'presence'),
       where('lastSeen', '>', Timestamp.fromDate(twoMinutesAgo))
     );
 

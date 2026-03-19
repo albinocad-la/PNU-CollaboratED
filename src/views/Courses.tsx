@@ -49,14 +49,6 @@ export default function Courses({ onCourseClick, onChatClick }: CoursesProps) {
                 
                 <div className="mt-6 pt-6 border-t border-slate-100 flex justify-between items-center">
                   <div className="flex items-center gap-3">
-                    <div className="flex -space-x-2">
-                      {[1, 2, 3].map(i => (
-                        <img key={i} src={`https://i.pravatar.cc/150?u=${course.id}${i}`} alt="Classmate" className="w-8 h-8 rounded-full border-2 border-white" referrerPolicy="no-referrer" />
-                      ))}
-                      <div className="w-8 h-8 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-xs font-medium text-slate-500">
-                        +24
-                      </div>
-                    </div>
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();

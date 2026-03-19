@@ -19,7 +19,6 @@ export default function Sidebar({ currentView, onNavigate, isOpen, onClose, user
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
     { id: 'calendar', label: 'Calendar', icon: <Calendar className="w-5 h-5" /> },
     { id: 'courses', label: 'Courses', icon: <BookOpen className="w-5 h-5" /> },
-    { id: 'groups', label: 'Study Groups', icon: <Users className="w-5 h-5" /> },
     { id: 'messages', label: 'Messages', icon: <MessageSquare className="w-5 h-5" /> },
     { id: 'decks', label: 'Review Decks', icon: <Layers className="w-5 h-5" /> },
   ];

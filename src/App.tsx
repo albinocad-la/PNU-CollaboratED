@@ -9,7 +9,6 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './views/Dashboard';
 import Courses from './views/Courses';
-import StudyGroups from './views/StudyGroups';
 import Messages from './views/Messages';
 import ReviewDecks from './views/ReviewDecks';
 import CourseDetail from './views/CourseDetail';
@@ -109,7 +108,6 @@ export default function App() {
     switch (currentView) {
       case 'dashboard': return 'Dashboard';
       case 'courses': return 'Courses';
-      case 'groups': return 'Study Groups';
       case 'messages': return 'Messages';
       case 'decks': return 'Review Decks';
       case 'course-detail': return 'Course Details';
@@ -135,10 +133,9 @@ export default function App() {
     switch (currentView) {
       case 'dashboard': return <Dashboard key="dashboard" user={user!} profile={profile} onCourseClick={handleCourseClick} onChatClick={handleChatClick} onViewAllCourses={() => handleNavigate('courses')} onViewCalendar={() => handleNavigate('calendar')} />;
       case 'courses': return <Courses key="courses" onCourseClick={handleCourseClick} onChatClick={handleChatClick} />;
-      case 'groups': return <StudyGroups key="groups" onChatClick={handleChatClick} />;
       case 'messages': return <Messages key="messages" user={user!} profile={profile} initialChatId={selectedChatId} />;
       case 'decks': return <ReviewDecks key="decks" />;
-      case 'course-detail': return <CourseDetail key="course-detail" courseId={selectedCourseId} onBack={handleBack} />;
+      case 'course-detail': return <CourseDetail key="course-detail" courseId={selectedCourseId} onBack={handleBack} onChatClick={handleChatClick} />;
       case 'calendar': return <Calendar key="calendar" />;
       case 'profile': return <Profile key="profile" user={user!} />;
       default: return <Dashboard key="dashboard" user={user!} profile={profile} onCourseClick={handleCourseClick} onChatClick={handleChatClick} onViewAllCourses={() => handleNavigate('courses')} onViewCalendar={() => handleNavigate('calendar')} />;
