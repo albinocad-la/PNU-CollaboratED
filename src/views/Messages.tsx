@@ -1,10 +1,11 @@
-import { Send, Paperclip, Smile, MoreVertical, Search, MessageCircle, Users as UsersIcon, Hash, ChevronLeft, Plus, Info, Image as ImageIcon, File as FileIcon, X, Compass } from 'lucide-react';
+import { Send, Paperclip, Smile, MoreVertical, Search, MessageCircle, Users as UsersIcon, Hash, ChevronLeft, Plus, Info, Image as ImageIcon, File as FileIcon, X, Compass, Pencil, Save, Trash2, Reply } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Message, Chat } from '../types';
 import { User } from 'firebase/auth';
+import EmojiPicker, { Theme } from 'emoji-picker-react';
 import { updateGroupPresence, useGroupOnlineStatus } from '../services/presenceService';
-import { subscribeToChats, subscribeToMessages, sendMessage, getOrCreateDirectChat, searchUsers, initializeCourseChats, getAllCourseChats, joinChat, createGroupChat } from '../services/chatService';
+import { subscribeToChats, subscribeToMessages, sendMessage, getOrCreateDirectChat, searchUsers, initializeCourseChats, getAllCourseChats, joinChat, createGroupChat, getUserProfiles, updateChatNickname, updateChatAvatar, updateChatName, leaveChat } from '../services/chatService';
 import { courses } from '../data';
 
 interface MessagesProps {
@@ -20,6 +21,15 @@ interface ChatListItemProps {
   onClick: () => void;
   userId: string;
   key?: string;
+}
+
+interface EditModalState {
+  show: boolean;
+  title: string;
+  label: string;
+  value: string;
+  placeholder: string;
+  onSave: (val: string) => void;
 }
 
 function ChatListItem({ chat, isActive, onClick, userId }: ChatListItemProps) {
@@ -129,9 +139,22 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
   const [uploading, setUploading] = useState(false);
   const [showJoinGroups, setShowJoinGroups] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [showChatInfo, setShowChatInfo] = useState(false);
+  const [chatMembers, setChatMembers] = useState<any[]>([]);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [editModal, setEditModal] = useState<EditModalState>({
+    show: false,
+    title: '',
+    label: '',
+    value: '',
+    placeholder: '',
+    onSave: () => {}
+  });
   const [newGroupName, setNewGroupName] = useState('');
   const [selectedParticipants, setSelectedParticipants] = useState<any[]>([]);
   const [availableGroups, setAvailableGroups] = useState<Chat[]>([]);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -202,18 +225,58 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentMessages]);
 
-  const handleSendMessage = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!input.trim() || !activeChatId) return;
+  // Fetch chat members when info is opened
+  useEffect(() => {
+    if (showChatInfo && activeChat) {
+      const fetchMembers = async () => {
+        const profiles = await getUserProfiles(activeChat.participants);
+        setChatMembers(profiles);
+      };
+      fetchMembers();
+    }
+  }, [showChatInfo, activeChatId]);
 
-    const content = input.trim();
+  const onEmojiClick = (emojiObject: any) => {
+    setInput(prev => prev + emojiObject.emoji);
+    setShowEmojiPicker(false);
+  };
+
+  const handleSendMessage = async (e?: React.FormEvent, contentOverride?: string) => {
+    e?.preventDefault();
+    const content = contentOverride || input.trim();
+    if (!content || !activeChatId) return;
+
+    const replyContext = replyingTo ? {
+      id: replyingTo.id,
+      senderName: replyingTo.senderName,
+      content: replyingTo.content,
+      type: replyingTo.type
+    } : undefined;
+
     setInput('');
+    setShowEmojiPicker(false);
+    setReplyingTo(null);
     
     try {
-      await sendMessage(activeChatId, user.uid, displayName, photoURL, content);
+      await sendMessage(activeChatId, user.uid, displayName, photoURL, content, 'text', undefined, undefined, replyContext);
     } catch (error) {
       console.error('Error sending message:', error);
     }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!activeChatId) return;
+    try {
+      const { deleteMessage } = await import('../services/chatService');
+      await deleteMessage(activeChatId, messageId);
+    } catch (error) {
+      console.error('Error deleting message:', error);
+    }
+  };
+
+  const handleReplyTo = (message: Message) => {
+    setReplyingTo(message);
+    setShowEmojiPicker(false);
   };
 
   const handleSearch = async (val: string) => {
@@ -289,12 +352,10 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
 
     setUploading(true);
     
-    // Simulate upload
-    setTimeout(async () => {
+    const reader = new FileReader();
+    reader.onload = async (event) => {
       try {
-        const mockUrl = type === 'image' 
-          ? `https://picsum.photos/seed/${Date.now()}/800/600`
-          : 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
+        const fileUrl = event.target?.result as string;
         
         await sendMessage(
           activeChatId, 
@@ -303,9 +364,16 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
           photoURL, 
           type === 'image' ? 'Sent an image' : `Sent a file: ${file.name}`,
           type,
-          mockUrl,
-          file.name
+          fileUrl,
+          file.name,
+          replyingTo ? {
+            id: replyingTo.id,
+            senderName: replyingTo.senderName,
+            content: replyingTo.content,
+            type: replyingTo.type
+          } : undefined
         );
+        setReplyingTo(null);
       } catch (error) {
         console.error('Error uploading:', error);
       } finally {
@@ -313,12 +381,72 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
         if (fileInputRef.current) fileInputRef.current.value = '';
         if (imageInputRef.current) imageInputRef.current.value = '';
       }
-    }, 1500);
+    };
+
+    if (type === 'image') {
+      reader.readAsDataURL(file);
+    } else {
+      // For files, we still use the dummy PDF for now because data URLs for large files are bad
+      // but we can at least show the real name
+      setTimeout(async () => {
+        try {
+          const mockUrl = 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
+          await sendMessage(
+            activeChatId, 
+            user.uid, 
+            displayName, 
+            photoURL, 
+            `Sent a file: ${file.name}`,
+            'file',
+            mockUrl,
+            file.name,
+            replyingTo ? {
+              id: replyingTo.id,
+              senderName: replyingTo.senderName,
+              content: replyingTo.content,
+              type: replyingTo.type
+            } : undefined
+          );
+          setReplyingTo(null);
+        } catch (error) {
+          console.error('Error uploading:', error);
+        } finally {
+          setUploading(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          if (imageInputRef.current) imageInputRef.current.value = '';
+        }
+      }, 1000);
+    }
   };
 
   const selectChat = (id: string) => {
     setActiveChatId(id);
     setShowMobileChat(true);
+    setShowChatInfo(false);
+  };
+
+  const handleUpdateNickname = async (memberId: string, nickname: string) => {
+    if (!activeChatId) return;
+    await updateChatNickname(activeChatId, memberId, nickname);
+  };
+
+  const handleUpdateChatAvatar = async (url: string) => {
+    if (!activeChatId) return;
+    await updateChatAvatar(activeChatId, url);
+  };
+
+  const handleUpdateChatName = async (name: string) => {
+    if (!activeChatId) return;
+    await updateChatName(activeChatId, name);
+  };
+
+  const handleLeaveChat = async () => {
+    if (!activeChatId) return;
+    await leaveChat(activeChatId, user.uid);
+    setActiveChatId('');
+    setShowMobileChat(false);
+    setShowChatInfo(false);
+    setShowLeaveConfirm(false);
   };
 
   return (
@@ -418,9 +546,12 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
               <ChatHeader 
                 chat={activeChat} 
                 onBack={() => setShowMobileChat(false)} 
+                onInfo={() => setShowChatInfo(!showChatInfo)}
               />
 
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-2 bg-white scrollbar-hide">
+              <div className="flex-1 flex overflow-hidden">
+                <div className="flex-1 flex flex-col min-w-0">
+                  <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-2 bg-white scrollbar-hide">
                 <div className="flex flex-col items-center py-8 space-y-3">
                   <div className="relative">
                     {activeChat.type === 'course' ? (
@@ -460,39 +591,85 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
                           <div className="w-7 shrink-0" />
                         )}
                         
-                        <div className={`max-w-[75%] sm:max-w-[60%] flex flex-col ${msg.isMe ? 'items-end' : 'items-start'}`}>
-                          {msg.type === 'image' ? (
-                            <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm">
-                              <img src={msg.fileUrl} alt="Sent image" className="max-w-full h-auto max-h-64 object-cover" referrerPolicy="no-referrer" />
-                            </div>
-                          ) : msg.type === 'file' ? (
-                            <a 
-                              href={msg.fileUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-sm border ${
-                                msg.isMe 
-                                  ? 'bg-indigo-600 text-white border-indigo-500' 
-                                  : 'bg-slate-100 text-slate-800 border-slate-200'
-                              }`}
-                            >
-                              <div className={`p-2 rounded-lg ${msg.isMe ? 'bg-white/20' : 'bg-white'}`}>
-                                <FileIcon className="w-5 h-5" />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-bold truncate">{msg.fileName}</p>
-                                <p className={`text-[10px] ${msg.isMe ? 'text-indigo-100' : 'text-slate-500'}`}>Click to open file</p>
-                              </div>
-                            </a>
-                          ) : (
-                            <div className={`px-4 py-2 rounded-2xl text-sm ${
-                              msg.isMe 
-                                ? 'bg-indigo-600 text-white rounded-tr-md' 
-                                : 'bg-slate-100 text-slate-800 rounded-tl-md'
+                        <div className={`max-w-[75%] sm:max-w-[60%] flex flex-col ${msg.isMe ? 'items-end' : 'items-start'} group/msg relative`}>
+                          {!msg.isMe && isLastInGroup && (
+                            <span className="text-[10px] font-bold text-slate-500 mb-1 px-1">
+                              {activeChat.nicknames?.[msg.senderId] || msg.senderName}
+                            </span>
+                          )}
+
+                          {/* Reply Context */}
+                          {msg.replyTo && (
+                            <div className={`mb-1 px-3 py-1.5 rounded-xl border-l-4 text-[10px] max-w-full truncate ${
+                              msg.isMe ? 'bg-indigo-50 border-indigo-400 text-indigo-700' : 'bg-slate-50 border-slate-300 text-slate-600'
                             }`}>
-                              {msg.content}
+                              <p className="font-bold mb-0.5">{msg.replyTo.senderName}</p>
+                              <p className="truncate italic">
+                                {msg.replyTo.type === 'image' ? '📷 Photo' : msg.replyTo.type === 'file' ? '📁 File' : msg.replyTo.content}
+                              </p>
                             </div>
                           )}
+
+                          <div className="relative group/actions">
+                            {msg.type === 'image' ? (
+                              <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm">
+                                <img src={msg.fileUrl} alt="Sent image" className="max-w-full h-auto max-h-64 object-cover" referrerPolicy="no-referrer" />
+                              </div>
+                            ) : msg.type === 'file' ? (
+                              <a 
+                                href={msg.fileUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-sm border ${
+                                  msg.isMe 
+                                    ? 'bg-indigo-600 text-white border-indigo-500' 
+                                    : 'bg-slate-100 text-slate-800 border-slate-200'
+                                }`}
+                              >
+                                <div className={`p-2 rounded-lg ${msg.isMe ? 'bg-white/20' : 'bg-white'}`}>
+                                  <FileIcon className="w-5 h-5" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-bold truncate">{msg.fileName}</p>
+                                  <p className={`text-[10px] ${msg.isMe ? 'text-indigo-100' : 'text-slate-500'}`}>Click to open file</p>
+                                </div>
+                              </a>
+                            ) : (
+                              <div className={`px-4 py-2 rounded-2xl text-sm ${
+                                msg.isDeleted 
+                                  ? 'bg-slate-50 text-slate-400 italic border border-slate-100' 
+                                  : msg.isMe 
+                                    ? 'bg-indigo-600 text-white rounded-tr-md' 
+                                    : 'bg-slate-100 text-slate-800 rounded-tl-md'
+                              }`}>
+                                {msg.content}
+                              </div>
+                            )}
+
+                            {/* Message Actions */}
+                            {!msg.isDeleted && (
+                              <div className={`absolute top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover/actions:opacity-100 transition-opacity ${
+                                msg.isMe ? 'right-full mr-2' : 'left-full ml-2'
+                              }`}>
+                                <button 
+                                  onClick={() => handleReplyTo(msg)}
+                                  className="p-1.5 bg-white shadow-sm border border-slate-100 rounded-full text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                                  title="Reply"
+                                >
+                                  <Reply className="w-3 h-3" />
+                                </button>
+                                {msg.isMe && (
+                                  <button 
+                                    onClick={() => handleDeleteMessage(msg.id)}
+                                    className="p-1.5 bg-white shadow-sm border border-slate-100 rounded-full text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all"
+                                    title="Unsend"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
                           {isLastInGroup && (
                             <span className="text-[9px] text-slate-400 mt-1 px-1">{msg.timestamp}</span>
                           )}
@@ -510,9 +687,197 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
                   </div>
                 )}
                 <div ref={messagesEndRef} />
+                </div>
+
+                {/* Chat Info Sidebar */}
+                <AnimatePresence>
+                  {showChatInfo && (
+                    <motion.div
+                      initial={{ width: 0, opacity: 0, x: 20 }}
+                      animate={{ width: '100%', opacity: 1, x: 0 }}
+                      exit={{ width: 0, opacity: 0, x: 20 }}
+                      className="fixed inset-0 z-50 lg:relative lg:inset-auto lg:z-0 lg:w-80 lg:border-l border-slate-200 bg-white lg:bg-slate-50 overflow-y-auto"
+                    >
+                      <div className="p-6 space-y-8">
+                        <div className="flex items-center justify-between lg:hidden mb-4">
+                          <button 
+                            onClick={() => setShowChatInfo(false)}
+                            className="p-2 hover:bg-slate-100 rounded-full text-slate-600 transition-colors"
+                          >
+                            <ChevronLeft className="w-6 h-6" />
+                          </button>
+                          <h3 className="font-bold text-slate-800">Chat Info</h3>
+                          <div className="w-10" />
+                        </div>
+
+                        <div className="flex flex-col items-center text-center space-y-4">
+                          <div className="relative group">
+                            {activeChat.type === 'course' ? (
+                              <div className={`w-24 h-24 rounded-3xl ${activeChat.color || 'bg-indigo-500'} flex items-center justify-center text-white font-bold text-4xl shadow-lg`}>
+                                {activeChat.name.split(' ').map((w: string) => w[0]).join('').substring(0, 2)}
+                              </div>
+                            ) : activeChat.avatar ? (
+                              <img src={activeChat.avatar} alt={activeChat.name} className="w-24 h-24 rounded-3xl object-cover shadow-lg border-4 border-white" referrerPolicy="no-referrer" />
+                            ) : (
+                              <div className="w-24 h-24 rounded-3xl bg-white flex items-center justify-center text-slate-300 shadow-lg">
+                                <UsersIcon className="w-12 h-12" />
+                              </div>
+                            )}
+                            <button 
+                              onClick={() => {
+                                setEditModal({
+                                  show: true,
+                                  title: 'Group Avatar',
+                                  label: 'Avatar URL',
+                                  value: activeChat.avatar || '',
+                                  placeholder: 'https://example.com/image.png',
+                                  onSave: (url) => handleUpdateChatAvatar(url)
+                                });
+                              }}
+                              className="absolute inset-0 bg-black/40 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white"
+                            >
+                              <Pencil className="w-5 h-5" />
+                            </button>
+                          </div>
+                          <div className="w-full px-4">
+                            <div className="flex items-center justify-center gap-2 group/title">
+                              <h3 className="font-black text-slate-800 text-xl tracking-tight truncate max-w-[200px]">{activeChat.name}</h3>
+                              <button 
+                                onClick={() => {
+                                  setEditModal({
+                                    show: true,
+                                    title: 'Group Name',
+                                    label: 'New Name',
+                                    value: activeChat.name,
+                                    placeholder: 'Enter group name...',
+                                    onSave: (name) => handleUpdateChatName(name)
+                                  });
+                                }}
+                                className="p-1 text-slate-400 hover:text-indigo-600 transition-colors lg:opacity-0 group-hover/title:opacity-100"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <p className="text-xs text-slate-500 font-medium uppercase tracking-widest mt-1">
+                              {activeChat.type === 'course' ? 'Official Course Group' : 'Group Chat'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between px-1">
+                            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Members</h4>
+                            <span className="text-[10px] font-bold text-indigo-600">{activeChat.participants.length}</span>
+                          </div>
+                          <div className="space-y-3">
+                            {chatMembers.map(member => (
+                              <div key={member.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-white transition-colors group/member">
+                                <img src={member.photoURL} className="w-8 h-8 rounded-full object-cover border border-slate-200" referrerPolicy="no-referrer" />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between">
+                                    <p 
+                                      className="text-sm font-bold text-slate-800 truncate cursor-pointer hover:text-indigo-600 transition-colors"
+                                      onClick={() => {
+                                        setEditModal({
+                                          show: true,
+                                          title: 'Set Nickname',
+                                          label: `Nickname for ${member.displayName}`,
+                                          value: activeChat.nicknames?.[member.id] || '',
+                                          placeholder: 'Enter nickname...',
+                                          onSave: (nick) => handleUpdateNickname(member.id, nick)
+                                        });
+                                      }}
+                                    >
+                                      {activeChat.nicknames?.[member.id] || member.displayName}
+                                    </p>
+                                    <button 
+                                      onClick={() => {
+                                        setEditModal({
+                                          show: true,
+                                          title: 'Set Nickname',
+                                          label: `Nickname for ${member.displayName}`,
+                                          value: activeChat.nicknames?.[member.id] || '',
+                                          placeholder: 'Enter nickname...',
+                                          onSave: (nick) => handleUpdateNickname(member.id, nick)
+                                        });
+                                      }}
+                                      className="lg:opacity-0 group-hover/member:opacity-100 p-1 text-slate-400 hover:text-indigo-600 transition-all"
+                                    >
+                                      <Pencil className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                  {activeChat.nicknames?.[member.id] && (
+                                    <p className="text-[10px] text-slate-400 truncate">{member.displayName}</p>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="pt-8 border-t border-slate-200">
+                          {showLeaveConfirm ? (
+                            <div className="space-y-3 p-4 bg-red-50 rounded-2xl border border-red-100">
+                              <p className="text-xs font-bold text-red-800 text-center">Are you sure you want to leave this group?</p>
+                              <div className="flex gap-2">
+                                <button 
+                                  onClick={handleLeaveChat}
+                                  className="flex-1 py-2 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700 transition-colors"
+                                >
+                                  Yes, Leave
+                                </button>
+                                <button 
+                                  onClick={() => setShowLeaveConfirm(false)}
+                                  className="flex-1 py-2 bg-white text-slate-600 border border-slate-200 rounded-xl text-xs font-bold hover:bg-slate-50 transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button 
+                              onClick={() => setShowLeaveConfirm(true)}
+                              className="w-full py-3 px-4 bg-red-50 text-red-600 rounded-2xl text-sm font-bold hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
+                            >
+                              <X className="w-4 h-4" />
+                              Leave Group
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
               </div>
 
-              <div className="p-3 sm:p-4 bg-white shrink-0">
+              <div className="p-3 sm:p-4 bg-white shrink-0 border-t border-slate-100">
+                {/* Reply Preview */}
+                <AnimatePresence>
+                  {replyingTo && (
+                    <motion.div 
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="mb-2 bg-slate-50 rounded-2xl p-3 flex items-start gap-3 border border-slate-100 relative overflow-hidden"
+                    >
+                      <div className="w-1 h-full bg-indigo-500 absolute left-0 top-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest mb-0.5">Replying to {replyingTo.senderName}</p>
+                        <p className="text-xs text-slate-600 truncate italic">
+                          {replyingTo.type === 'image' ? '📷 Photo' : replyingTo.type === 'file' ? '📁 File' : replyingTo.content}
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => setReplyingTo(null)}
+                        className="p-1 hover:bg-slate-200 rounded-full text-slate-400 transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-1 text-indigo-600">
                     <input 
@@ -541,6 +906,30 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
                     >
                       <ImageIcon className="w-5 h-5" />
                     </button>
+                    <div className="relative">
+                      <button 
+                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                        className={`p-2 rounded-full transition-colors ${showEmojiPicker ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-indigo-50'}`}
+                      >
+                        <Smile className="w-5 h-5" />
+                      </button>
+                      {showEmojiPicker && (
+                        <div className="absolute bottom-full left-0 mb-2 z-50">
+                          <div className="fixed inset-0" onClick={() => setShowEmojiPicker(false)} />
+                          <div className="relative shadow-2xl rounded-2xl overflow-hidden border border-slate-200">
+                            <EmojiPicker 
+                              onEmojiClick={onEmojiClick}
+                              theme={Theme.LIGHT}
+                              width={300}
+                              height={400}
+                              lazyLoadEmojis={true}
+                              skinTonesDisabled={true}
+                              searchDisabled={false}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   
                   <form onSubmit={handleSendMessage} className="flex-1 flex items-center gap-2 bg-slate-100 rounded-full px-4 py-2 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
@@ -551,21 +940,22 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
                       placeholder="Aa"
                       className="flex-1 bg-transparent border-none focus:ring-0 outline-none text-sm text-slate-800 placeholder-slate-500 py-1"
                     />
-                    <button type="button" className="text-indigo-600 hover:text-indigo-700 transition-colors p-1">
-                      <Smile className="w-5 h-5" />
-                    </button>
                   </form>
                   
                   {input.trim() ? (
                     <button 
-                      onClick={handleSendMessage}
+                      type="submit"
                       className="p-2 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 shadow-sm transition-all active:scale-95"
                     >
                       <Send className="w-5 h-5" />
                     </button>
                   ) : (
-                    <button className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors">
-                      <Smile className="w-5 h-5" />
+                    <button 
+                      type="button"
+                      onClick={() => handleSendMessage(undefined, '👍')}
+                      className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors text-xl"
+                    >
+                      👍
                     </button>
                   )}
                 </div>
@@ -751,6 +1141,68 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
                   className="w-full py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all active:scale-95 shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
                 >
                   Create Group
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Modal */}
+      <AnimatePresence>
+        {editModal.show && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setEditModal({ ...editModal, show: false })}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden p-6 space-y-6"
+            >
+              <div>
+                <h3 className="text-xl font-black text-slate-800 tracking-tight">{editModal.title}</h3>
+                <p className="text-xs text-slate-500 font-medium">Update the information below</p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">{editModal.label}</label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={editModal.value}
+                  onChange={(e) => setEditModal({ ...editModal, value: e.target.value })}
+                  placeholder={editModal.placeholder}
+                  className="w-full px-4 py-3 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none text-sm"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      editModal.onSave(editModal.value);
+                      setEditModal({ ...editModal, show: false });
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setEditModal({ ...editModal, show: false })}
+                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-2xl text-sm font-bold hover:bg-slate-200 transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => {
+                    editModal.onSave(editModal.value);
+                    setEditModal({ ...editModal, show: false });
+                  }}
+                  className="flex-1 py-3 bg-indigo-600 text-white rounded-2xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20"
+                >
+                  Save Changes
                 </button>
               </div>
             </motion.div>

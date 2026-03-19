@@ -117,9 +117,10 @@ export const sendMessage = async (
   content: string,
   type: 'text' | 'image' | 'file' = 'text',
   fileUrl?: string,
-  fileName?: string
+  fileName?: string,
+  replyTo?: Message['replyTo']
 ) => {
-  const messageData = {
+  const messageData: any = {
     chatId,
     senderId,
     senderName,
@@ -130,6 +131,10 @@ export const sendMessage = async (
     fileUrl,
     fileName
   };
+
+  if (replyTo) {
+    messageData.replyTo = replyTo;
+  }
 
   try {
     await addDoc(collection(db, 'chats', chatId, 'messages'), messageData);
@@ -269,5 +274,97 @@ export const createGroupChat = async (name: string, participantIds: string[], cr
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, 'chats');
     return '';
+  }
+};
+
+export const getUserProfiles = async (uids: string[]) => {
+  if (uids.length === 0) return [];
+  
+  try {
+    // Firestore 'in' query supports up to 30 elements
+    const results = [];
+    for (let i = 0; i < uids.length; i += 30) {
+      const chunk = uids.slice(i, i + 30);
+      const q = query(collection(db, 'users'), where('__name__', 'in', chunk));
+      const snapshot = await getDocs(q);
+      results.push(...snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }
+    return results;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'users');
+    return [];
+  }
+};
+
+export const updateChatNickname = async (chatId: string, userId: string, nickname: string) => {
+  try {
+    const chatRef = doc(db, 'chats', chatId);
+    await updateDoc(chatRef, {
+      [`nicknames.${userId}`]: nickname
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}`);
+  }
+};
+
+export const updateChatAvatar = async (chatId: string, avatarUrl: string) => {
+  try {
+    const chatRef = doc(db, 'chats', chatId);
+    await updateDoc(chatRef, {
+      avatar: avatarUrl
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}`);
+  }
+};
+
+export const updateChatName = async (chatId: string, name: string) => {
+  try {
+    const chatRef = doc(db, 'chats', chatId);
+    await updateDoc(chatRef, {
+      name
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}`);
+  }
+};
+
+export const deleteMessage = async (chatId: string, messageId: string) => {
+  try {
+    const messageRef = doc(db, 'chats', chatId, 'messages', messageId);
+    await updateDoc(messageRef, {
+      content: 'Message unsent',
+      isDeleted: true,
+      fileUrl: null,
+      fileName: null
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}/messages/${messageId}`);
+  }
+};
+
+export const leaveChat = async (chatId: string, userId: string) => {
+  try {
+    const chatRef = doc(db, 'chats', chatId);
+    const chatSnap = await getDoc(chatRef);
+    
+    if (chatSnap.exists()) {
+      const participants = chatSnap.data().participants || [];
+      const newParticipants = participants.filter((id: string) => id !== userId);
+      
+      if (newParticipants.length === 0) {
+        // If no participants left, maybe delete the chat? 
+        // For now, just remove the user.
+        await updateDoc(chatRef, {
+          participants: []
+        });
+      } else {
+        await updateDoc(chatRef, {
+          participants: newParticipants
+        });
+      }
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}`);
   }
 };

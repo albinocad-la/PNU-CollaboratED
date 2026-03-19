@@ -38,6 +38,13 @@ export interface Message {
   type?: 'text' | 'image' | 'file';
   fileUrl?: string;
   fileName?: string;
+  isDeleted?: boolean;
+  replyTo?: {
+    id: string;
+    senderName: string;
+    content: string;
+    type?: 'text' | 'image' | 'file';
+  };
 }
 
 export interface Chat {
@@ -49,6 +56,7 @@ export interface Chat {
   lastActive: string;
   avatar?: string;
   color?: string;
+  nicknames?: { [userId: string]: string };
 }
 
 export interface ReviewDeck {
