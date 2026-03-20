@@ -5,7 +5,9 @@ import {
   where, 
   onSnapshot, 
   serverTimestamp,
-  orderBy
+  orderBy,
+  deleteDoc,
+  doc
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { LearningMaterial } from '../types';
@@ -22,6 +24,11 @@ export const addLearningMaterial = async (material: Omit<LearningMaterial, 'id' 
   });
 
   return docRef.id;
+};
+
+export const deleteLearningMaterial = async (materialId: string) => {
+  if (!auth.currentUser) throw new Error('User must be authenticated to delete materials');
+  await deleteDoc(doc(db, COLLECTION_NAME, materialId));
 };
 
 export const subscribeToMaterials = (courseId: string, callback: (materials: LearningMaterial[]) => void) => {

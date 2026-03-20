@@ -134,7 +134,7 @@ export default function App() {
       case 'dashboard': return <Dashboard key="dashboard" user={user!} profile={profile} onCourseClick={handleCourseClick} onChatClick={handleChatClick} onViewAllCourses={() => handleNavigate('courses')} onViewCalendar={() => handleNavigate('calendar')} />;
       case 'courses': return <Courses key="courses" onCourseClick={handleCourseClick} onChatClick={handleChatClick} />;
       case 'messages': return <Messages key="messages" user={user!} profile={profile} initialChatId={selectedChatId} />;
-      case 'decks': return <ReviewDecks key="decks" />;
+      case 'decks': return <ReviewDecks key="decks" user={user!} />;
       case 'course-detail': return <CourseDetail key="course-detail" courseId={selectedCourseId} onBack={handleBack} onChatClick={handleChatClick} />;
       case 'calendar': return <Calendar key="calendar" />;
       case 'profile': return <Profile key="profile" user={user!} />;

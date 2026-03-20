@@ -5,7 +5,7 @@ import { Message, Chat } from '../types';
 import { User } from 'firebase/auth';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import { updateGroupPresence, useGroupOnlineStatus } from '../services/presenceService';
-import { subscribeToChats, subscribeToMessages, sendMessage, getOrCreateDirectChat, searchUsers, initializeCourseChats, getAllCourseChats, joinChat, createGroupChat, getUserProfiles, updateChatNickname, updateChatAvatar, updateChatName, leaveChat } from '../services/chatService';
+import { subscribeToChats, subscribeToMessages, sendMessage, getOrCreateDirectChat, searchUsers, initializeCourseChats, getAllCourseChats, joinChat, createGroupChat, getUserProfiles, updateChatNickname, updateChatAvatar, updateChatName, leaveChat, uploadFile } from '../services/chatService';
 import { courses } from '../data';
 
 interface MessagesProps {
@@ -35,6 +35,18 @@ interface EditModalState {
 function ChatListItem({ chat, isActive, onClick, userId }: ChatListItemProps) {
   const { isOnline } = useGroupOnlineStatus(chat.id);
   
+  // For direct chats, find the other participant's info
+  let chatName = chat.name;
+  let chatAvatar = chat.avatar;
+  
+  if (chat.type === 'direct' && chat.participantsInfo) {
+    const otherId = chat.participants.find(id => id !== userId);
+    if (otherId && chat.participantsInfo[otherId]) {
+      chatName = chat.participantsInfo[otherId].displayName;
+      chatAvatar = chat.participantsInfo[otherId].photoURL;
+    }
+  }
+  
   return (
     <div 
       onClick={onClick}
@@ -47,10 +59,10 @@ function ChatListItem({ chat, isActive, onClick, userId }: ChatListItemProps) {
         <div className="relative shrink-0">
           {chat.type === 'course' ? (
             <div className={`w-12 h-12 rounded-2xl ${chat.color || 'bg-indigo-500'} flex items-center justify-center text-white font-bold text-lg shadow-sm`}>
-              {chat.name.split(' ').map((w: string) => w[0]).join('').substring(0, 2)}
+              {chatName.split(' ').map((w: string) => w[0]).join('').substring(0, 2)}
             </div>
-          ) : chat.avatar ? (
-            <img src={chat.avatar} alt={chat.name} className="w-12 h-12 rounded-2xl object-cover shadow-sm border border-slate-200" referrerPolicy="no-referrer" />
+          ) : chatAvatar ? (
+            <img src={chatAvatar} alt={chatName} className="w-12 h-12 rounded-2xl object-cover shadow-sm border border-slate-200" referrerPolicy="no-referrer" />
           ) : (
             <div className="w-12 h-12 rounded-2xl bg-slate-200 flex items-center justify-center text-slate-500 shadow-sm">
               <UsersIcon className="w-6 h-6" />
@@ -63,7 +75,7 @@ function ChatListItem({ chat, isActive, onClick, userId }: ChatListItemProps) {
         <div className="flex-1 min-w-0">
           <div className="flex justify-between items-baseline mb-0.5">
             <h4 className={`font-bold truncate text-sm sm:text-base ${isActive ? 'text-indigo-900' : 'text-slate-800'}`}>
-              {chat.name}
+              {chatName}
             </h4>
             <span className="text-[10px] text-slate-400 font-medium shrink-0 ml-2">
               {chat.lastActive ? (typeof chat.lastActive === 'string' ? chat.lastActive : 'Just now') : ''}
@@ -78,8 +90,20 @@ function ChatListItem({ chat, isActive, onClick, userId }: ChatListItemProps) {
   );
 }
 
-function ChatHeader({ chat, onBack, onInfo }: { chat: Chat, onBack?: () => void, onInfo?: () => void }) {
+function ChatHeader({ chat, onBack, onInfo, userId }: { chat: Chat, onBack?: () => void, onInfo?: () => void, userId: string }) {
   const { isOnline, activeCount } = useGroupOnlineStatus(chat.id);
+  
+  // For direct chats, find the other participant's info
+  let chatName = chat.name;
+  let chatAvatar = chat.avatar;
+  
+  if (chat.type === 'direct' && chat.participantsInfo) {
+    const otherId = chat.participants.find(id => id !== userId);
+    if (otherId && chat.participantsInfo[otherId]) {
+      chatName = chat.participantsInfo[otherId].displayName;
+      chatAvatar = chat.participantsInfo[otherId].photoURL;
+    }
+  }
   
   return (
     <div className="h-16 border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 bg-white shrink-0 z-10">
@@ -92,10 +116,10 @@ function ChatHeader({ chat, onBack, onInfo }: { chat: Chat, onBack?: () => void,
         <div className="relative">
           {chat.type === 'course' ? (
             <div className={`w-10 h-10 rounded-xl ${chat.color || 'bg-indigo-500'} flex items-center justify-center text-white font-bold text-sm`}>
-              {chat.name.split(' ').map((w: string) => w[0]).join('').substring(0, 2)}
+              {chatName.split(' ').map((w: string) => w[0]).join('').substring(0, 2)}
             </div>
-          ) : chat.avatar ? (
-            <img src={chat.avatar} alt={chat.name} className="w-10 h-10 rounded-xl object-cover border border-slate-200" referrerPolicy="no-referrer" />
+          ) : chatAvatar ? (
+            <img src={chatAvatar} alt={chatName} className="w-10 h-10 rounded-xl object-cover border border-slate-200" referrerPolicy="no-referrer" />
           ) : (
             <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500">
               <UsersIcon className="w-5 h-5" />
@@ -106,7 +130,7 @@ function ChatHeader({ chat, onBack, onInfo }: { chat: Chat, onBack?: () => void,
           )}
         </div>
         <div>
-          <h3 className="font-bold text-slate-800 text-sm sm:text-base leading-tight">{chat.name}</h3>
+          <h3 className="font-bold text-slate-800 text-sm sm:text-base leading-tight">{chatName}</h3>
           <p className="text-[10px] sm:text-xs text-slate-500 flex items-center gap-1">
             {isOnline ? (
               <>
@@ -136,6 +160,9 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
   const [showMobileChat, setShowMobileChat] = useState(!!initialChatId);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [groupSearchQuery, setGroupSearchQuery] = useState('');
+  const [groupSearchResults, setGroupSearchResults] = useState<any[]>([]);
+  const [isGroupSearching, setIsGroupSearching] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showJoinGroups, setShowJoinGroups] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -291,10 +318,24 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
     }
   };
 
+  const handleGroupSearch = async (val: string) => {
+    setGroupSearchQuery(val);
+    if (val.trim().length > 1) {
+      setIsGroupSearching(true);
+      const results = await searchUsers(val, user.uid);
+      setGroupSearchResults(results);
+    } else {
+      setGroupSearchResults([]);
+      setIsGroupSearching(false);
+    }
+  };
+
   const startDirectChat = async (otherUser: any) => {
     try {
       const chatId = await getOrCreateDirectChat(
         user.uid, 
+        profile?.displayName || user.displayName || 'User',
+        profile?.photoURL || user.photoURL || '',
         otherUser.id, 
         otherUser.displayName, 
         otherUser.photoURL
@@ -324,12 +365,20 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
     if (!newGroupName.trim() || selectedParticipants.length === 0) return;
     
     try {
-      const participantIds = selectedParticipants.map(p => p.id);
-      const chatId = await createGroupChat(newGroupName, participantIds, user.uid);
+      const chatId = await createGroupChat(
+        newGroupName, 
+        selectedParticipants, 
+        user.uid,
+        profile?.displayName || user.displayName || 'User',
+        profile?.photoURL || user.photoURL || ''
+      );
       if (chatId) {
         setShowCreateGroup(false);
         setNewGroupName('');
         setSelectedParticipants([]);
+        setGroupSearchQuery('');
+        setGroupSearchResults([]);
+        setIsGroupSearching(false);
         setActiveChatId(chatId);
         setShowMobileChat(true);
       }
@@ -350,79 +399,59 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
     const file = e.target.files?.[0];
     if (!file || !activeChatId) return;
 
+    // Limit to 10MB as requested
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File size exceeds 10MB limit.');
+      return;
+    }
+
     setUploading(true);
     
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const fileUrl = event.target?.result as string;
-        
-        await sendMessage(
-          activeChatId, 
-          user.uid, 
-          displayName, 
-          photoURL, 
-          type === 'image' ? 'Sent an image' : `Sent a file: ${file.name}`,
-          type,
-          fileUrl,
-          file.name,
-          replyingTo ? {
-            id: replyingTo.id,
-            senderName: replyingTo.senderName,
-            content: replyingTo.content,
-            type: replyingTo.type
-          } : undefined
-        );
-        setReplyingTo(null);
-      } catch (error) {
-        console.error('Error uploading:', error);
-      } finally {
-        setUploading(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        if (imageInputRef.current) imageInputRef.current.value = '';
-      }
-    };
-
-    if (type === 'image') {
-      reader.readAsDataURL(file);
-    } else {
-      // For files, we still use the dummy PDF for now because data URLs for large files are bad
-      // but we can at least show the real name
-      setTimeout(async () => {
-        try {
-          const mockUrl = 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
-          await sendMessage(
-            activeChatId, 
-            user.uid, 
-            displayName, 
-            photoURL, 
-            `Sent a file: ${file.name}`,
-            'file',
-            mockUrl,
-            file.name,
-            replyingTo ? {
-              id: replyingTo.id,
-              senderName: replyingTo.senderName,
-              content: replyingTo.content,
-              type: replyingTo.type
-            } : undefined
-          );
-          setReplyingTo(null);
-        } catch (error) {
-          console.error('Error uploading:', error);
-        } finally {
-          setUploading(false);
-          if (fileInputRef.current) fileInputRef.current.value = '';
-          if (imageInputRef.current) imageInputRef.current.value = '';
-        }
-      }, 1000);
+    try {
+      const fileUrl = await uploadFile(file);
+      
+      await sendMessage(
+        activeChatId, 
+        user.uid, 
+        displayName, 
+        photoURL, 
+        type === 'image' ? 'Sent an image' : `Sent a file: ${file.name}`,
+        type,
+        fileUrl,
+        file.name,
+        replyingTo ? {
+          id: replyingTo.id,
+          senderName: replyingTo.senderName,
+          content: replyingTo.content,
+          type: replyingTo.type
+        } : undefined
+      );
+      setReplyingTo(null);
+    } catch (error) {
+      console.error('Error uploading:', error);
+      alert(error instanceof Error ? error.message : 'Error uploading file');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (imageInputRef.current) imageInputRef.current.value = '';
     }
   };
 
-  const selectChat = (id: string) => {
+  const selectChat = async (id: string) => {
     setActiveChatId(id);
     setShowMobileChat(true);
     setShowChatInfo(false);
+
+    // If it's a course chat, automatically join the user to participants
+    // to ensure they have write permissions
+    const chat = chats.find(c => c.id === id);
+    if (chat?.type === 'course' && !chat.participants.includes(user.uid)) {
+      try {
+        await joinChat(id, user.uid);
+      } catch (error) {
+        console.error('Error auto-joining course chat:', error);
+      }
+    }
   };
 
   const handleUpdateNickname = async (memberId: string, nickname: string) => {
@@ -547,6 +576,7 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
                 chat={activeChat} 
                 onBack={() => setShowMobileChat(false)} 
                 onInfo={() => setShowChatInfo(!showChatInfo)}
+                userId={user.uid}
               />
 
               <div className="flex-1 flex overflow-hidden">
@@ -1089,7 +1119,8 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
                     <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                       type="text"
-                      onChange={(e) => handleSearch(e.target.value)}
+                      value={groupSearchQuery}
+                      onChange={(e) => handleGroupSearch(e.target.value)}
                       placeholder="Search users..."
                       className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none text-sm"
                     />
@@ -1099,7 +1130,7 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
                     <div className="flex flex-wrap gap-2 py-2">
                       {selectedParticipants.map(p => (
                         <div key={p.id} className="flex items-center gap-1.5 bg-indigo-50 text-indigo-700 px-2 py-1 rounded-full text-[10px] font-bold">
-                          <img src={p.photoURL} className="w-4 h-4 rounded-full" />
+                          <img src={p.photoURL || `https://ui-avatars.com/api/?name=${p.displayName}`} className="w-4 h-4 rounded-full" referrerPolicy="no-referrer" />
                           {p.displayName}
                           <button onClick={() => toggleParticipant(p)} className="hover:text-indigo-900">
                             <X className="w-3 h-3" />
@@ -1110,7 +1141,7 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
                   )}
 
                   <div className="space-y-1 max-h-48 overflow-y-auto pr-2">
-                    {searchResults.map(u => (
+                    {groupSearchResults.map(u => (
                       <div 
                         key={u.id}
                         onClick={() => toggleParticipant(u)}
@@ -1118,7 +1149,7 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
                           selectedParticipants.find(p => p.id === u.id) ? 'bg-indigo-50' : 'hover:bg-slate-50'
                         }`}
                       >
-                        <img src={u.photoURL} className="w-10 h-10 rounded-full object-cover border border-slate-100" />
+                        <img src={u.photoURL || `https://ui-avatars.com/api/?name=${u.displayName}`} className="w-10 h-10 rounded-full object-cover border border-slate-100" referrerPolicy="no-referrer" />
                         <div className="flex-1 min-w-0">
                           <h4 className="font-bold text-slate-800 text-sm truncate">{u.displayName}</h4>
                           <p className="text-xs text-slate-500 truncate">{u.email}</p>
@@ -1130,6 +1161,9 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
                         </div>
                       </div>
                     ))}
+                    {isGroupSearching && groupSearchResults.length === 0 && (
+                      <p className="text-center py-4 text-xs text-slate-400">No users found</p>
+                    )}
                   </div>
                 </div>
               </div>

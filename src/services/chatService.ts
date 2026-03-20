@@ -149,7 +149,7 @@ export const sendMessage = async (
   }
 };
 
-export const getOrCreateDirectChat = async (user1Id: string, user2Id: string, user2Name: string, user2Avatar: string) => {
+export const getOrCreateDirectChat = async (user1Id: string, user1Name: string, user1Avatar: string, user2Id: string, user2Name: string, user2Avatar: string) => {
   try {
     // Check if direct chat already exists
     const q = query(
@@ -170,12 +170,16 @@ export const getOrCreateDirectChat = async (user1Id: string, user2Id: string, us
 
     // Create new direct chat
     const newChatRef = await addDoc(collection(db, 'chats'), {
-      name: user2Name,
+      name: user2Name, // Default name, will be overridden on client for user2
       type: 'direct',
       participants: [user1Id, user2Id],
+      participantsInfo: {
+        [user1Id]: { displayName: user1Name, photoURL: user1Avatar },
+        [user2Id]: { displayName: user2Name, photoURL: user2Avatar }
+      },
       lastMessage: 'Started a new conversation',
       lastActive: serverTimestamp(),
-      avatar: user2Avatar
+      avatar: user2Avatar // Default avatar
     });
 
     return newChatRef.id;
@@ -240,6 +244,44 @@ export const getAllCourseChats = async () => {
   }
 };
 
+export const uploadFile = async (file: File): Promise<string> => {
+  // If file is small enough (< 800KB to be safe with base64 overhead in 1MB Firestore doc), use data URL
+  if (file.size < 800 * 1024) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = (e) => reject(e);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // For larger files, use a public temporary file upload service
+  // Note: This is a fallback since we don't have Firebase Storage provisioned
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    // Using tmpfiles.org as a public temporary storage
+    const response = await fetch('https://tmpfiles.org/api/v1/upload', {
+      method: 'POST',
+      body: formData
+    });
+    
+    if (!response.ok) throw new Error('Upload failed');
+    
+    const data = await response.json();
+    // The API returns a URL like https://tmpfiles.org/12345/filename
+    // We need the direct link which is usually https://tmpfiles.org/dl/12345/filename
+    const url = data.data.url;
+    return url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+  } catch (error) {
+    console.error('Error uploading to public service:', error);
+    // Fallback to data URL even if it might fail Firestore limit, 
+    // or throw error if we want to be strict
+    throw new Error('File too large for Firestore and public upload failed');
+  }
+};
+
 export const joinChat = async (chatId: string, userId: string) => {
   try {
     const chatRef = doc(db, 'chats', chatId);
@@ -258,12 +300,21 @@ export const joinChat = async (chatId: string, userId: string) => {
   }
 };
 
-export const createGroupChat = async (name: string, participantIds: string[], creatorId: string) => {
+export const createGroupChat = async (name: string, participants: { id: string, displayName: string, photoURL: string }[], creatorId: string, creatorName: string, creatorAvatar: string) => {
   try {
+    const participantsInfo: { [userId: string]: { displayName: string, photoURL: string } } = {
+      [creatorId]: { displayName: creatorName, photoURL: creatorAvatar }
+    };
+    
+    participants.forEach(p => {
+      participantsInfo[p.id] = { displayName: p.displayName, photoURL: p.photoURL };
+    });
+
     const chatData = {
       name,
       type: 'group',
-      participants: [creatorId, ...participantIds],
+      participants: [creatorId, ...participants.map(p => p.id)],
+      participantsInfo,
       lastMessage: 'Created a new group chat',
       lastActive: serverTimestamp(),
       color: 'bg-indigo-500' // Default color for custom groups

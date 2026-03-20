@@ -47,7 +47,7 @@ service cloud.firestore {
 
     function isValidUrl(url) {
       return url is string &&
-        (url == "" || url.matches("^https://.*") || url.matches("^http://.*"));
+        (url == "" || url.matches("^https://.*") || url.matches("^http://.*") || url.matches("^data:.*"));
     }
 
     // ===============================================================
@@ -85,6 +85,7 @@ service cloud.firestore {
              data.participants is list &&
              (data.type == 'course' || (data.participants.size() >= 2 && request.auth.uid in data.participants)) &&
              (!('nicknames' in data) || data.nicknames is map) &&
+             (!('participantsInfo' in data) || data.participantsInfo is map) &&
              (!('avatar' in data) || isValidUrl(data.avatar)) &&
              (!('name' in data) || (data.name is string && data.name.size() > 0 && data.name.size() < 100));
     }
@@ -113,6 +114,26 @@ service cloud.firestore {
              ));
     }
 
+    function isValidReviewDeck(data) {
+      return isAuthenticated() &&
+             data.keys().hasAll(['userId', 'title', 'courseId', 'cardsCount', 'progress', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 100 &&
+             data.courseId is string &&
+             data.cardsCount is number &&
+             data.progress is number &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidFlashcard(data) {
+      return isAuthenticated() &&
+             data.keys().hasAll(['deckId', 'front', 'back', 'createdAt']) &&
+             data.deckId is string &&
+             data.front is string && data.front.size() > 0 && data.front.size() < 1000 &&
+             data.back is string && data.back.size() > 0 && data.back.size() < 1000 &&
+             data.createdAt is timestamp;
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -128,6 +149,20 @@ service cloud.firestore {
                       request.resource.data.email == resource.data.email;
       
       allow delete: if isAdmin();
+    }
+
+    match /decks/{deckId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidReviewDeck(request.resource.data);
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin()) && isValidReviewDeck(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+
+      match /flashcards/{cardId} {
+        allow read: if isAuthenticated() && (get(/databases/$(database)/documents/decks/$(deckId)).data.userId == request.auth.uid || isAdmin());
+        allow create: if isAuthenticated() && get(/databases/$(database)/documents/decks/$(deckId)).data.userId == request.auth.uid && isValidFlashcard(request.resource.data);
+        allow update: if isAuthenticated() && (get(/databases/$(database)/documents/decks/$(deckId)).data.userId == request.auth.uid || isAdmin()) && isValidFlashcard(request.resource.data);
+        allow delete: if isAuthenticated() && (get(/databases/$(database)/documents/decks/$(deckId)).data.userId == request.auth.uid || isAdmin());
+      }
     }
 
     match /todos/{todoId} {
@@ -201,18 +236,21 @@ service cloud.firestore {
       allow delete: if isAdmin();
 
       match /messages/{messageId} {
-        allow read: if isAuthenticated() && 
-                      request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        allow read: if isAuthenticated() && (
+          get(/databases/$(database)/documents/chats/$(chatId)).data.type == 'course' ||
+          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants
+        );
         
-        allow create: if isAuthenticated() && 
-                        request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants &&
-                        isValidMessage(request.resource.data);
+        allow create: if isAuthenticated() && (
+          get(/databases/$(database)/documents/chats/$(chatId)).data.type == 'course' ||
+          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants
+        ) && isValidMessage(request.resource.data);
                         
         allow update: if isAuthenticated() && 
                         resource.data.senderId == request.auth.uid &&
-                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isDeleted']) &&
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isDeleted', 'content', 'fileUrl', 'fileName']) &&
                         request.resource.data.isDeleted == true;
-        allow delete: if isAuthenticated() && resource.data.senderId == request.auth.uid;
+        allow delete: if isAuthenticated() && (resource.data.senderId == request.auth.uid || isAdmin());
       }
 
       match /presence/{userId} {

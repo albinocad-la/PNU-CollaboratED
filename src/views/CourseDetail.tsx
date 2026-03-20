@@ -14,12 +14,14 @@ import {
   Loader2, 
   ExternalLink,
   Video,
-  File
+  File,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   addLearningMaterial, 
-  subscribeToMaterials 
+  subscribeToMaterials,
+  deleteLearningMaterial
 } from '../services/materialService';
 import { auth } from '../firebase';
 import { LearningMaterial } from '../types';
@@ -40,6 +42,7 @@ export default function CourseDetail({ courseId, onBack, onChatClick }: CourseDe
   const [newMaterialUrl, setNewMaterialUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [materialToDelete, setMaterialToDelete] = useState<string | null>(null);
   
   const [localMaterials, setLocalMaterials] = useState<LearningMaterial[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -156,6 +159,17 @@ export default function CourseDetail({ courseId, onBack, onChatClick }: CourseDe
     setSelectedMaterial(material);
   };
 
+  const handleDeleteMaterial = async (materialId: string) => {
+    try {
+      await deleteLearningMaterial(materialId);
+      setMaterialToDelete(null);
+    } catch (err) {
+      console.error('Error deleting material:', err);
+      setError('Failed to delete material. Please try again.');
+      setMaterialToDelete(null);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, x: 20 }}
@@ -230,7 +244,21 @@ export default function CourseDetail({ courseId, onBack, onChatClick }: CourseDe
                         {material.type.replace('-', ' ')}
                       </p>
                     </div>
-                    <ExternalLink className="w-4 h-4 text-slate-300 group-hover:text-indigo-400 transition-colors" />
+                    <div className="flex items-center gap-2">
+                      <ExternalLink className="w-4 h-4 text-slate-300 group-hover:text-indigo-400 transition-colors" />
+                      {auth.currentUser?.uid === material.addedBy && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMaterialToDelete(material.id);
+                          }}
+                          className="p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-all"
+                          title="Delete Material"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))
               ) : (
@@ -354,6 +382,47 @@ export default function CourseDetail({ courseId, onBack, onChatClick }: CourseDe
                     </a>
                   </div>
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {materialToDelete && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMaterialToDelete(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-sm relative z-10 overflow-hidden p-8 text-center"
+            >
+              <div className="w-16 h-16 bg-rose-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <Trash2 className="w-8 h-8 text-rose-500" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Delete Material?</h3>
+              <p className="text-slate-500 mb-8">This action cannot be undone. Are you sure you want to remove this resource?</p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setMaterialToDelete(null)}
+                  className="flex-1 py-3 rounded-xl font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => handleDeleteMaterial(materialToDelete)}
+                  className="flex-1 py-3 rounded-xl font-bold bg-rose-500 text-white hover:bg-rose-600 transition-all shadow-lg shadow-rose-100"
+                >
+                  Delete
+                </button>
               </div>
             </motion.div>
           </div>

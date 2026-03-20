@@ -87,9 +87,9 @@ export const chats: Chat[] = [
 ];
 
 export const reviewDecks: ReviewDeck[] = [
-  { id: 'd1', title: 'UTS Midterm Review', courseId: 'uts', cardsCount: 45, lastReviewed: '2 days ago', progress: 60 },
-  { id: 'd2', title: 'RPH Key Dates', courseId: 'rph', cardsCount: 20, lastReviewed: 'Today', progress: 85 },
-  { id: 'd3', title: 'MMW Formulas', courseId: 'mmw', cardsCount: 35, lastReviewed: '1 week ago', progress: 20 },
+  { id: 'd1', userId: 'system', title: 'UTS Midterm Review', courseId: 'uts', cardsCount: 45, lastReviewed: '2 days ago', progress: 60 },
+  { id: 'd2', userId: 'system', title: 'RPH Key Dates', courseId: 'rph', cardsCount: 20, lastReviewed: 'Today', progress: 85 },
+  { id: 'd3', userId: 'system', title: 'MMW Formulas', courseId: 'mmw', cardsCount: 35, lastReviewed: '1 week ago', progress: 20 },
 ];
 
 export const flashcards: Flashcard[] = [

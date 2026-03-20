@@ -105,6 +105,35 @@
         "fileName": { "type": "string", "description": "Original name of the attached file." }
       },
       "required": ["chatId", "senderId", "content", "timestamp"]
+    },
+    "ReviewDeck": {
+      "title": "Review Deck",
+      "description": "A collection of flashcards for a specific course and user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "courseId": { "type": "string" },
+        "cardsCount": { "type": "number" },
+        "lastReviewed": { "type": "string", "format": "date-time" },
+        "progress": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "courseId", "cardsCount", "progress"]
+    },
+    "Flashcard": {
+      "title": "Flashcard",
+      "description": "A single flashcard with a front and back side.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "deckId": { "type": "string" },
+        "front": { "type": "string" },
+        "back": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["deckId", "front", "back"]
     }
   },
   "firestore": {
@@ -127,6 +156,14 @@
     "/chats/{chatId}/messages/{messageId}": {
       "schema": "Message",
       "description": "Subcollection of messages within a chat."
+    },
+    "/decks/{deckId}": {
+      "schema": "ReviewDeck",
+      "description": "Collection of all review decks."
+    },
+    "/decks/{deckId}/flashcards/{cardId}": {
+      "schema": "Flashcard",
+      "description": "Subcollection of flashcards within a deck."
     }
   }
 }

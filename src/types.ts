@@ -52,6 +52,12 @@ export interface Chat {
   name: string;
   type: 'course' | 'group' | 'direct';
   participants: string[];
+  participantsInfo?: { 
+    [userId: string]: { 
+      displayName: string; 
+      photoURL: string; 
+    } 
+  };
   lastMessage?: string;
   lastActive: string;
   avatar?: string;
@@ -61,11 +67,13 @@ export interface Chat {
 
 export interface ReviewDeck {
   id: string;
+  userId: string;
   title: string;
   courseId: string;
   cardsCount: number;
   lastReviewed: string;
   progress: number;
+  createdAt?: any;
 }
 
 export interface Flashcard {
@@ -73,4 +81,5 @@ export interface Flashcard {
   deckId: string;
   front: string;
   back: string;
+  createdAt?: any;
 }
