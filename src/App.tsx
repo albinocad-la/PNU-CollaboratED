@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { View } from './types';
+import { View, UserProfile } from './types';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './views/Dashboard';
@@ -15,21 +15,73 @@ import CourseDetail from './views/CourseDetail';
 import Login from './views/Login';
 import Profile from './views/Profile';
 import Calendar from './views/Calendar';
-import { AnimatePresence } from 'motion/react';
+import Settings from './views/Settings';
+import Community from './views/Community';
 import { auth, db } from './firebase';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
+import { onAuthStateChanged, User, signOut } from 'firebase/auth';
+import { doc, onSnapshot, setDoc, serverTimestamp, getDocFromServer } from 'firebase/firestore';
 import { updateGlobalPresence } from './services/presenceService';
+import { useStudy } from './contexts/StudyContext';
+import { useTheme } from './contexts/ThemeContext';
+import { motion, AnimatePresence } from 'motion/react';
+import { Brain, Focus } from 'lucide-react';
 
-interface UserProfile {
-  displayName?: string;
-  photoURL?: string;
-  email?: string;
-  ugNumber?: string;
-  bio?: string;
+// Removed local UserProfile interface as it is now in types.ts
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string;
+    email?: string | null;
+    emailVerified?: boolean;
+    isAnonymous?: boolean;
+    tenantId?: string | null;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null, user: User | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: user?.uid,
+      email: user?.email,
+      emailVerified: user?.emailVerified,
+      isAnonymous: user?.isAnonymous,
+      tenantId: user?.tenantId,
+      providerInfo: user?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
 }
 
 export default function App() {
+  const { isFocusMode, isStudyMode, toggleFocusMode } = useStudy();
+  const { isDarkMode } = useTheme();
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -37,6 +89,7 @@ export default function App() {
   const [viewHistory, setViewHistory] = useState<{ view: View; id?: string }[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [selectedChatId, setSelectedChatId] = useState<string | undefined>(undefined);
+  const [selectedDeckId, setSelectedDeckId] = useState<string | undefined>(undefined);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -60,6 +113,18 @@ export default function App() {
       setUser(user);
       
       if (user) {
+        // Test connection
+        const testConnection = async () => {
+          try {
+            await getDocFromServer(doc(db, 'test', 'connection'));
+          } catch (error) {
+            if (error instanceof Error && error.message.includes('the client is offline')) {
+              console.error("Please check your Firebase configuration.");
+            }
+          }
+        };
+        testConnection();
+
         // Listen to profile changes in Firestore
         const userRef = doc(db, 'users', user.uid);
         unsubscribeProfile = onSnapshot(userRef, async (snapshot) => {
@@ -79,16 +144,25 @@ export default function App() {
               setProfile(newProfile as any);
             } catch (e) {
               console.error("Error creating profile:", e);
-              // Fallback to auth data
-              setProfile({
-                displayName: user.displayName || '',
-                photoURL: user.photoURL || '',
-                email: user.email || '',
-              });
+              try {
+                handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}`, user);
+              } catch (err) {
+                // Fallback to auth data
+                setProfile({
+                  displayName: user.displayName || '',
+                  photoURL: user.photoURL || '',
+                  email: user.email || '',
+                });
+              }
             }
           }
         }, (error) => {
           console.error("Error listening to profile:", error);
+          try {
+            handleFirestoreError(error, OperationType.GET, `users/${user.uid}`, user);
+          } catch (e) {
+            // Silent error after logging
+          }
         });
       } else {
         setProfile(null);
@@ -113,6 +187,8 @@ export default function App() {
       case 'course-detail': return 'Course Details';
       case 'calendar': return 'Academic Calendar';
       case 'profile': return 'My Profile';
+      case 'settings': return 'Settings';
+      case 'community': return 'Community';
       default: return 'PNU CollaboratED';
     }
   };
@@ -129,16 +205,24 @@ export default function App() {
     setCurrentView('messages');
   };
 
+  const handleReviewClick = (deckId?: string) => {
+    setViewHistory(prev => [...prev, { view: currentView, id: selectedCourseId || undefined }]);
+    setSelectedDeckId(deckId);
+    setCurrentView('decks');
+  };
+
   const renderView = () => {
     switch (currentView) {
-      case 'dashboard': return <Dashboard key="dashboard" user={user!} profile={profile} onCourseClick={handleCourseClick} onChatClick={handleChatClick} onViewAllCourses={() => handleNavigate('courses')} onViewCalendar={() => handleNavigate('calendar')} />;
+      case 'dashboard': return <Dashboard key="dashboard" user={user!} profile={profile} onCourseClick={handleCourseClick} onChatClick={handleChatClick} onViewAllCourses={() => handleNavigate('courses')} onViewCalendar={() => handleNavigate('calendar')} onNavigate={handleNavigate} />;
       case 'courses': return <Courses key="courses" onCourseClick={handleCourseClick} onChatClick={handleChatClick} />;
       case 'messages': return <Messages key="messages" user={user!} profile={profile} initialChatId={selectedChatId} />;
-      case 'decks': return <ReviewDecks key="decks" user={user!} />;
-      case 'course-detail': return <CourseDetail key="course-detail" courseId={selectedCourseId} onBack={handleBack} onChatClick={handleChatClick} />;
+      case 'decks': return <ReviewDecks key="decks" user={user!} initialDeckId={selectedDeckId} />;
+      case 'course-detail': return <CourseDetail key="course-detail" courseId={selectedCourseId} onBack={handleBack} onChatClick={handleChatClick} onReviewClick={handleReviewClick} />;
       case 'calendar': return <Calendar key="calendar" />;
       case 'profile': return <Profile key="profile" user={user!} />;
-      default: return <Dashboard key="dashboard" user={user!} profile={profile} onCourseClick={handleCourseClick} onChatClick={handleChatClick} onViewAllCourses={() => handleNavigate('courses')} onViewCalendar={() => handleNavigate('calendar')} />;
+      case 'settings': return <Settings key="settings" user={user!} profile={profile} onLogout={handleLogout} />;
+      case 'community': return <Community key="community" currentUser={profile as UserProfile} />;
+      default: return <Dashboard key="dashboard" user={user!} profile={profile} onCourseClick={handleCourseClick} onChatClick={handleChatClick} onViewAllCourses={() => handleNavigate('courses')} onViewCalendar={() => handleNavigate('calendar')} onNavigate={handleNavigate} />;
     }
   };
 
@@ -148,6 +232,9 @@ export default function App() {
       setCurrentView(view);
       if (view !== 'messages') {
         setSelectedChatId(undefined);
+      }
+      if (view !== 'decks') {
+        setSelectedDeckId(undefined);
       }
     }
     setIsSidebarOpen(false);
@@ -166,6 +253,14 @@ export default function App() {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -179,32 +274,113 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden relative">
+    <div className={`flex h-screen font-sans text-slate-900 dark:text-slate-100 overflow-hidden relative transition-colors duration-700 ${
+      isDarkMode ? 'dark bg-slate-950' : 'bg-slate-50'
+    } ${
+      isStudyMode ? 'bg-indigo-50/50 dark:bg-indigo-950/20' : ''
+    }`}>
+      {/* Study Mode Overlay/Glow */}
+      <AnimatePresence>
+        {isStudyMode && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 pointer-events-none z-0"
+            style={{
+              background: 'radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.05) 0%, transparent 70%)'
+            }}
+          />
+        )}
+      </AnimatePresence>
+
       <Sidebar 
         currentView={currentView} 
         onNavigate={handleNavigate} 
-        isOpen={isSidebarOpen} 
+        isOpen={isSidebarOpen && !isFocusMode} 
         onClose={() => setIsSidebarOpen(false)} 
         user={user}
         profile={profile}
       />
       
-      <div className="flex-1 flex flex-col h-screen overflow-hidden">
-        <Header 
-          title={getTitle()} 
-          onMenuToggle={() => setIsSidebarOpen(!isSidebarOpen)} 
-          onProfileClick={() => handleNavigate('profile')}
-          onBack={handleBack}
-          showBack={viewHistory.length > 0}
-          user={user}
-          profile={profile}
-        />
+      <div className={`flex-1 flex flex-col h-screen overflow-hidden transition-all duration-500 relative z-10 ${
+        isFocusMode ? 'max-w-4xl mx-auto w-full' : ''
+      }`}>
+        <AnimatePresence>
+          {!isFocusMode && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              <Header 
+                title={getTitle()} 
+                onMenuToggle={() => setIsSidebarOpen(!isSidebarOpen)} 
+                onProfileClick={() => handleNavigate('profile')}
+                onBack={handleBack}
+                showBack={viewHistory.length > 0}
+                user={user}
+                profile={profile}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Mode Banners */}
+        <div className="px-4 sm:px-8 pt-4 flex flex-wrap gap-2">
+          <AnimatePresence>
+            {isStudyMode && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="flex items-center gap-2 px-3 py-1 bg-indigo-600 text-white text-[10px] font-bold rounded-full shadow-lg shadow-indigo-500/20 uppercase tracking-wider"
+              >
+                <Brain className="w-3 h-3" />
+                Study Session Active
+              </motion.div>
+            )}
+            {isFocusMode && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="flex items-center gap-2 px-3 py-1 bg-emerald-500 text-white text-[10px] font-bold rounded-full shadow-lg shadow-emerald-500/20 uppercase tracking-wider"
+              >
+                <Focus className="w-3 h-3" />
+                Focus Mode Enabled
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
         
-        <main className="flex-1 overflow-y-auto bg-slate-50/50">
+        <main className={`flex-1 overflow-y-auto transition-all duration-500 ${
+          isFocusMode ? 'p-4 sm:p-8' : 'bg-slate-50/50 dark:bg-slate-900/50'
+        }`}>
           <AnimatePresence mode="wait">
             {renderView()}
           </AnimatePresence>
         </main>
+
+        {/* Focus Mode Exit Button */}
+        <AnimatePresence>
+          {isFocusMode && (
+            <motion.button
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              onClick={toggleFocusMode}
+              className="fixed bottom-8 right-8 p-4 bg-white shadow-2xl rounded-full border border-slate-200 text-slate-400 hover:text-indigo-600 transition-all z-50 group"
+              title="Exit Focus Mode"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-widest hidden group-hover:inline">Exit Focus</span>
+                <Focus className="w-6 h-6" />
+              </div>
+            </motion.button>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

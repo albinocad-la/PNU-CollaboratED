@@ -15,6 +15,7 @@ import {
 import { db, auth } from '../firebase';
 import { ReviewDeck, Flashcard } from '../types';
 import { GoogleGenAI, Type } from "@google/genai";
+import mammoth from 'mammoth';
 
 export enum OperationType {
   CREATE = 'create',
@@ -73,6 +74,26 @@ export const subscribeToDecks = (userId: string, callback: (decks: ReviewDeck[])
   const q = query(
     collection(db, 'decks'),
     where('userId', '==', userId),
+    orderBy('createdAt', 'desc')
+  );
+
+  return onSnapshot(q, (snapshot) => {
+    const decks = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      lastReviewed: doc.data().lastReviewed?.toDate?.()?.toLocaleString() || 'Never'
+    } as ReviewDeck));
+    callback(decks);
+  }, (error) => {
+    handleFirestoreError(error, OperationType.LIST, 'decks');
+  });
+};
+
+export const subscribeToCourseDecks = (userId: string, courseId: string, callback: (decks: ReviewDeck[]) => void) => {
+  const q = query(
+    collection(db, 'decks'),
+    where('userId', '==', userId),
+    where('courseId', '==', courseId),
     orderBy('createdAt', 'desc')
   );
 
@@ -195,51 +216,68 @@ export const generateFlashcardsFromContent = async (content: string) => {
 };
 
 export const generateFlashcardsFromFile = async (file: File) => {
-  // Read file as base64
-  const base64 = await new Promise<string>((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      resolve(result.split(',')[1]);
-    };
-    reader.readAsDataURL(file);
-  });
+  let contentPart: any;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3.1-pro-preview",
-    contents: [
-      {
+  try {
+    if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      // Handle DOCX
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      contentPart = { text: result.value };
+    } else if (file.type === 'application/pdf' || file.type.startsWith('image/')) {
+      // Handle PDF and Images
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result.split(',')[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      contentPart = {
         inlineData: {
           mimeType: file.type,
           data: base64
         }
-      },
-      {
-        text: `Generate a list of flashcards (front and back) from this document. 
-        Focus on key concepts, definitions, and important facts.
-        Output only a JSON array of objects with "front" and "back" properties.`
-      }
-    ],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            front: { type: Type.STRING },
-            back: { type: Type.STRING }
-          },
-          required: ["front", "back"]
+      };
+    } else if (file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
+      // Handle text-based files
+      const text = await file.text();
+      contentPart = { text };
+    } else {
+      throw new Error(`Unsupported file type: ${file.type}`);
+    }
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.1-pro-preview",
+      contents: [
+        contentPart,
+        {
+          text: `Generate a list of flashcards (front and back) from this document. 
+          Focus on key concepts, definitions, and important facts.
+          Output only a JSON array of objects with "front" and "back" properties.`
+        }
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              front: { type: Type.STRING },
+              back: { type: Type.STRING }
+            },
+            required: ["front", "back"]
+          }
         }
       }
-    }
-  });
+    });
 
-  try {
     return JSON.parse(response.text || '[]');
   } catch (e) {
-    console.error("Failed to parse Gemini response:", e);
-    return [];
+    console.error("Failed to generate flashcards from file:", e);
+    throw e; // Re-throw to be handled by the UI
   }
 };

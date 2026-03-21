@@ -1,16 +1,20 @@
 import { courses } from '../data';
-import { Layers, Play, Plus, Search, MoreVertical, RotateCcw, ChevronLeft, ChevronRight, Check, X, Upload, FileText, Loader2, Trash2 } from 'lucide-react';
+import { Layers, Play, Plus, Search, MoreVertical, RotateCcw, ChevronLeft, ChevronRight, Check, X, Upload, FileText, Loader2, Trash2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from 'firebase/auth';
 import { ReviewDeck, Flashcard } from '../types';
 import { subscribeToDecks, getFlashcards, createDeck, addFlashcard, deleteDeck, generateFlashcardsFromFile } from '../services/deckService';
+import SlideButton from '../components/SlideButton';
+import { useStudy } from '../contexts/StudyContext';
 
 interface ReviewDecksProps {
   user: User;
+  initialDeckId?: string;
 }
 
-const ReviewDecks: React.FC<ReviewDecksProps> = ({ user }) => {
+const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
+  const { isStudyMode, toggleStudyMode, incrementCardsReviewed } = useStudy();
   const [decks, setDecks] = useState<ReviewDeck[]>([]);
   const [activeDeckId, setActiveDeckId] = useState<string | null>(null);
   const [activeDeckFlashcards, setActiveDeckFlashcards] = useState<Flashcard[]>([]);
@@ -23,6 +27,8 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user }) => {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCourse, setFilterCourse] = useState('All Courses');
+  const [deckToDelete, setDeckToDelete] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -32,10 +38,18 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user }) => {
     return () => unsubscribe();
   }, [user.uid]);
 
+  useEffect(() => {
+    if (initialDeckId && decks.length > 0) {
+      handleStartReview(initialDeckId);
+    }
+  }, [initialDeckId, decks]);
+
   const handleStartReview = async (deckId: string) => {
+    setErrorMessage(null);
     const cards = await getFlashcards(deckId);
     if (cards.length === 0) {
-      alert("This deck has no cards yet!");
+      setErrorMessage("This deck has no cards yet! Add some cards or upload material to generate them.");
+      setTimeout(() => setErrorMessage(null), 5000);
       return;
     }
     setActiveDeckFlashcards(cards);
@@ -47,8 +61,12 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user }) => {
   const handleNextCard = () => {
     if (currentCardIndex < activeDeckFlashcards.length - 1) {
       setIsFlipped(false);
-      setTimeout(() => setCurrentCardIndex(prev => prev + 1), 150);
+      setTimeout(() => {
+        setCurrentCardIndex(prev => prev + 1);
+        incrementCardsReviewed();
+      }, 150);
     } else {
+      incrementCardsReviewed();
       setActiveDeckId(null); // Finish review
     }
   };
@@ -97,8 +115,19 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user }) => {
   };
 
   const handleDeleteDeck = async (deckId: string) => {
-    if (confirm("Are you sure you want to delete this deck?")) {
-      await deleteDeck(deckId);
+    setDeckToDelete(deckId);
+  };
+
+  const confirmDelete = async () => {
+    if (deckToDelete) {
+      try {
+        await deleteDeck(deckToDelete);
+        setDeckToDelete(null);
+      } catch (error) {
+        console.error("Error deleting deck:", error);
+        setErrorMessage("Failed to delete deck. Please try again.");
+        setTimeout(() => setErrorMessage(null), 5000);
+      }
     }
   };
 
@@ -122,16 +151,16 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user }) => {
         <div className="flex flex-col sm:flex-row items-center justify-between mb-6 sm:mb-8 gap-4">
           <button 
             onClick={() => setActiveDeckId(null)}
-            className="self-start text-slate-500 hover:text-slate-800 font-medium flex items-center gap-2 transition-colors"
+            className="self-start text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium flex items-center gap-2 transition-colors"
           >
             <ChevronLeft className="w-5 h-5" /> Back
           </button>
           <div className="text-center">
-            <h2 className="text-lg sm:text-xl font-bold text-slate-800">{deck?.title}</h2>
-            <p className="text-xs sm:text-sm text-slate-500">Card {currentCardIndex + 1} of {activeDeckFlashcards.length}</p>
+            <h2 className="text-lg sm:text-xl font-bold text-slate-800 dark:text-white">{deck?.title}</h2>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">Card {currentCardIndex + 1} of {activeDeckFlashcards.length}</p>
           </div>
           <div className="w-full sm:w-24">
-            <div className="w-full bg-slate-200 rounded-full h-2 mt-2">
+            <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 mt-2">
               <div 
                 className="bg-indigo-500 h-2 rounded-full transition-all duration-300" 
                 style={{ width: `${((currentCardIndex + 1) / activeDeckFlashcards.length) * 100}%` }}
@@ -148,14 +177,14 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user }) => {
               animate={{ rotateY: 0, opacity: 1 }}
               exit={{ rotateY: isFlipped ? 90 : -90, opacity: 0 }}
               transition={{ duration: 0.3 }}
-              className="w-full max-w-2xl aspect-[4/3] sm:aspect-[3/2] bg-white rounded-2xl sm:rounded-3xl shadow-xl border border-slate-200 cursor-pointer flex items-center justify-center p-6 sm:p-12 text-center relative"
+              className="w-full max-w-2xl aspect-[4/3] sm:aspect-[3/2] bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl shadow-xl border border-slate-200 dark:border-slate-800 cursor-pointer flex items-center justify-center p-6 sm:p-12 text-center relative"
               onClick={() => setIsFlipped(!isFlipped)}
               style={{ transformStyle: 'preserve-3d' }}
             >
-              <div className="absolute top-4 right-4 sm:top-6 sm:right-6 text-slate-400">
+              <div className="absolute top-4 right-4 sm:top-6 sm:right-6 text-slate-400 dark:text-slate-500">
                 <RotateCcw className="w-4 h-4 sm:w-5 h-5" />
               </div>
-              <h3 className="text-xl sm:text-3xl md:text-4xl font-medium text-slate-800 leading-relaxed">
+              <h3 className="text-xl sm:text-3xl md:text-4xl font-medium text-slate-800 dark:text-white leading-relaxed">
                 {isFlipped ? currentCard?.back : currentCard?.front}
               </h3>
             </motion.div>
@@ -165,7 +194,7 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user }) => {
             <button 
               onClick={handlePrevCard}
               disabled={currentCardIndex === 0}
-              className="p-3 sm:p-4 rounded-full bg-white border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+              className="p-3 sm:p-4 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
             >
               <ChevronLeft className="w-5 h-5 sm:w-6 h-6" />
             </button>
@@ -174,13 +203,13 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user }) => {
               <div className="flex gap-2 sm:gap-4">
                 <button 
                   onClick={handleNextCard}
-                  className="px-4 sm:px-8 py-2.5 sm:py-3 rounded-xl bg-red-50 text-red-600 font-semibold hover:bg-red-100 transition-colors flex items-center gap-1 sm:gap-2 text-sm sm:text-base"
+                  className="px-4 sm:px-8 py-2.5 sm:py-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-semibold hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors flex items-center gap-1 sm:gap-2 text-sm sm:text-base"
                 >
                   <X className="w-4 h-4 sm:w-5 h-5" /> Again
                 </button>
                 <button 
                   onClick={handleNextCard}
-                  className="px-4 sm:px-8 py-2.5 sm:py-3 rounded-xl bg-emerald-50 text-emerald-600 font-semibold hover:bg-emerald-100 transition-colors flex items-center gap-1 sm:gap-2 text-sm sm:text-base"
+                  className="px-4 sm:px-8 py-2.5 sm:py-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors flex items-center gap-1 sm:gap-2 text-sm sm:text-base"
                 >
                   <Check className="w-4 h-4 sm:w-5 h-5" /> Got it
                 </button>
@@ -197,7 +226,7 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user }) => {
             <button 
               onClick={handleNextCard}
               disabled={currentCardIndex === activeDeckFlashcards.length - 1 && !isFlipped}
-              className="p-3 sm:p-4 rounded-full bg-white border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+              className="p-3 sm:p-4 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
             >
               <ChevronRight className="w-5 h-5 sm:w-6 h-6" />
             </button>
@@ -216,33 +245,53 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user }) => {
     >
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-slate-800 tracking-tight mb-2">Review Decks</h2>
-          <p className="text-slate-500 text-sm sm:text-base">Master your course material with spaced repetition flashcards.</p>
+          <h2 className="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-white tracking-tight mb-2">Review Decks</h2>
+          <p className="text-slate-500 dark:text-slate-400 text-sm sm:text-base">Master your course material with spaced repetition flashcards.</p>
         </div>
-        <button 
-          onClick={() => setShowCreateModal(true)}
-          className="w-full sm:w-auto bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors shadow-sm flex items-center justify-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          Create Deck
-        </button>
+        <div className="flex items-center gap-4 w-full sm:w-auto">
+          <SlideButton label="Study Mode" isActive={isStudyMode} onToggle={toggleStudyMode} />
+          <button 
+            onClick={() => setShowCreateModal(true)}
+            className="flex-1 sm:flex-none bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors shadow-sm flex items-center justify-center gap-2"
+          >
+            <Plus className="w-5 h-5" />
+            Create Deck
+          </button>
+        </div>
       </div>
 
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+      <AnimatePresence>
+        {errorMessage && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl flex items-center gap-3"
+          >
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <p className="text-sm font-medium">{errorMessage}</p>
+            <button onClick={() => setErrorMessage(null)} className="ml-auto">
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
         <div className="relative flex-1">
-          <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
           <input
             type="text"
             placeholder="Search decks..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all outline-none"
+            className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-500/20 transition-all outline-none text-slate-800 dark:text-slate-200"
           />
         </div>
         <select 
           value={filterCourse}
           onChange={(e) => setFilterCourse(e.target.value)}
-          className="px-4 py-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-xl font-medium focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none"
+          className="px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-medium focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-500/20 outline-none"
         >
           <option>All Courses</option>
           {courses.map(c => <option key={c.id}>{c.code}</option>)}
@@ -251,44 +300,44 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user }) => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredDecks.map(deck => (
-          <div key={deck.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow group relative flex flex-col">
+          <div key={deck.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden hover:shadow-md transition-shadow group relative flex flex-col">
             <div className="p-6 flex-1">
               <div className="flex justify-between items-start mb-4">
-                <div className="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center text-purple-600">
+                <div className="w-12 h-12 bg-purple-50 dark:bg-purple-900/20 rounded-2xl flex items-center justify-center text-purple-600 dark:text-purple-400">
                   <Layers className="w-6 h-6" />
                 </div>
                 <button 
                   onClick={() => handleDeleteDeck(deck.id)}
-                  className="text-slate-400 hover:text-red-500 transition-colors"
+                  className="text-slate-400 dark:text-slate-500 hover:text-red-500 transition-colors"
                 >
                   <Trash2 className="w-5 h-5" />
                 </button>
               </div>
               
-              <h3 className="text-xl font-bold text-slate-800 mb-1 group-hover:text-indigo-600 transition-colors">
+              <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-1 group-hover:text-indigo-600 transition-colors">
                 {deck.title}
               </h3>
-              <p className="text-sm text-slate-500 mb-6 flex items-center gap-2">
-                <span className="font-medium text-slate-700">{deck.cardsCount} Cards</span>
-                <span>â€¢</span>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 flex items-center gap-2">
+                <span className="font-medium text-slate-700 dark:text-slate-300">{deck.cardsCount} Cards</span>
+                <span>•</span>
                 <span>Last reviewed {deck.lastReviewed}</span>
               </p>
               
               <div className="mb-6">
                 <div className="flex justify-between text-xs mb-1.5">
-                  <span className="font-medium text-slate-700 uppercase tracking-wider">Mastery</span>
-                  <span className="text-indigo-600 font-bold">{deck.progress}%</span>
+                  <span className="font-medium text-slate-700 dark:text-slate-300 uppercase tracking-wider">Mastery</span>
+                  <span className="text-indigo-600 dark:text-indigo-400 font-bold">{deck.progress}%</span>
                 </div>
-                <div className="w-full bg-slate-100 rounded-full h-2">
+                <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2">
                   <div className="bg-indigo-500 h-2 rounded-full" style={{ width: `${deck.progress}%` }}></div>
                 </div>
               </div>
             </div>
             
-            <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
               <button 
                 onClick={() => handleStartReview(deck.id)}
-                className="w-full py-2.5 bg-white border border-slate-200 text-slate-800 rounded-xl font-semibold hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm flex items-center justify-center gap-2"
+                className="w-full py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-xl font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-sm flex items-center justify-center gap-2"
               >
                 <Play className="w-4 h-4 fill-current" />
                 Review Now
@@ -298,14 +347,55 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user }) => {
         ))}
         {filteredDecks.length === 0 && (
           <div className="col-span-full py-12 text-center">
-            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
+            <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400 dark:text-slate-600">
               <Layers className="w-8 h-8" />
             </div>
-            <h3 className="text-lg font-bold text-slate-800">No decks found</h3>
-            <p className="text-slate-500">Create your first review deck to get started!</p>
+            <h3 className="text-lg font-bold text-slate-800 dark:text-white">No decks found</h3>
+            <p className="text-slate-500 dark:text-slate-400">Create your first review deck to get started!</p>
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {deckToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setDeckToDelete(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl shadow-2xl p-6 text-center border border-slate-200 dark:border-slate-800"
+            >
+              <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">Delete Deck?</h3>
+              <p className="text-slate-500 dark:text-slate-400 mb-6">This will permanently remove the deck and all its flashcards. This action cannot be undone.</p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setDeckToDelete(null)}
+                  className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-2xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={confirmDelete}
+                  className="flex-1 py-3 bg-red-600 text-white rounded-2xl font-bold hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20"
+                >
+                  Delete
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Create Deck Modal */}
       <AnimatePresence>
@@ -322,43 +412,43 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user }) => {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden"
+              className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800"
             >
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="text-xl font-bold text-slate-800">Create New Deck</h3>
-                <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400">
+              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <h3 className="text-xl font-bold text-slate-800 dark:text-white">Create New Deck</h3>
+                <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 dark:text-slate-500">
                   <X className="w-6 h-6" />
                 </button>
               </div>
               
               <div className="p-6 space-y-6">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Deck Title</label>
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Deck Title</label>
                   <input
                     type="text"
                     value={newDeckTitle}
                     onChange={(e) => setNewDeckTitle(e.target.value)}
                     placeholder="e.g. Midterm Review"
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-indigo-500 transition-all outline-none"
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:border-indigo-500 transition-all outline-none text-slate-800 dark:text-slate-200"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Course</label>
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Course</label>
                   <select 
                     value={selectedCourseId}
                     onChange={(e) => setSelectedCourseId(e.target.value)}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-indigo-500 transition-all outline-none"
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:border-indigo-500 transition-all outline-none text-slate-800 dark:text-slate-200"
                   >
                     {courses.map(c => <option key={c.id} value={c.id}>{c.name} ({c.code})</option>)}
                   </select>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Upload Material (Optional)</label>
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Upload Material (Optional)</label>
                   <div 
                     onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center hover:border-indigo-500 hover:bg-indigo-50 transition-all cursor-pointer group"
+                    className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl p-8 text-center hover:border-indigo-500 dark:hover:border-indigo-500/50 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all cursor-pointer group"
                   >
                     <input 
                       type="file" 
@@ -368,7 +458,7 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user }) => {
                       accept=".pdf,.doc,.docx,.txt"
                     />
                     {uploadFile ? (
-                      <div className="flex items-center justify-center gap-3 text-indigo-600">
+                      <div className="flex items-center justify-center gap-3 text-indigo-600 dark:text-indigo-400">
                         <FileText className="w-8 h-8" />
                         <div className="text-left">
                           <p className="font-bold text-sm truncate max-w-[200px]">{uploadFile.name}</p>
@@ -376,25 +466,25 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user }) => {
                         </div>
                         <button 
                           onClick={(e) => { e.stopPropagation(); setUploadFile(null); }}
-                          className="p-1 hover:bg-indigo-100 rounded-full"
+                          className="p-1 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 rounded-full"
                         >
                           <X className="w-4 h-4" />
                         </button>
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto text-slate-400 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
+                        <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto text-slate-400 dark:text-slate-500 group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900/30 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                           <Upload className="w-6 h-6" />
                         </div>
-                        <p className="text-sm font-medium text-slate-600">Click to upload study material</p>
-                        <p className="text-xs text-slate-400">PDF, DOC, TXT up to 10MB</p>
+                        <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Click to upload study material</p>
+                        <p className="text-xs text-slate-400 dark:text-slate-500">PDF, DOC, TXT up to 10MB</p>
                       </div>
                     )}
                   </div>
                 </div>
               </div>
 
-              <div className="p-6 bg-slate-50 border-t border-slate-100">
+              <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800">
                 <button 
                   onClick={handleCreateDeck}
                   disabled={!newDeckTitle.trim() || isCreating}

@@ -76,10 +76,12 @@ export const subscribeToChats = (userId: string, callback: (chats: Chat[]) => vo
   );
 
   return onSnapshot(q, (snapshot) => {
-    const chats = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    } as Chat));
+    const chats = snapshot.docs
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as Chat))
+      .filter(chat => !chat.deletedBy?.includes(userId));
     callback(chats);
   }, (error) => {
     handleFirestoreError(error, OperationType.LIST, 'chats');
@@ -139,10 +141,11 @@ export const sendMessage = async (
   try {
     await addDoc(collection(db, 'chats', chatId, 'messages'), messageData);
     
-    // Update last message in chat
+    // Update last message in chat and clear deletedBy so it reappears for everyone
     await updateDoc(doc(db, 'chats', chatId), {
       lastMessage: type === 'text' ? content : `Sent a ${type}`,
-      lastActive: serverTimestamp()
+      lastActive: serverTimestamp(),
+      deletedBy: [] // Clear deletedBy so the chat reappears for users who "deleted" it
     });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}/messages`);
@@ -403,15 +406,33 @@ export const leaveChat = async (chatId: string, userId: string) => {
       const participants = chatSnap.data().participants || [];
       const newParticipants = participants.filter((id: string) => id !== userId);
       
-      if (newParticipants.length === 0) {
-        // If no participants left, maybe delete the chat? 
-        // For now, just remove the user.
+      const updateData: any = {
+        participants: newParticipants
+      };
+
+      // Also remove from participantsInfo if it exists
+      if (chatSnap.data().participantsInfo) {
+        const newParticipantsInfo = { ...chatSnap.data().participantsInfo };
+        delete newParticipantsInfo[userId];
+        updateData.participantsInfo = newParticipantsInfo;
+      }
+
+      await updateDoc(chatRef, updateData);
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}`);
+  }
+};
+
+export const hideChat = async (chatId: string, userId: string) => {
+  try {
+    const chatRef = doc(db, 'chats', chatId);
+    const chatSnap = await getDoc(chatRef);
+    if (chatSnap.exists()) {
+      const deletedBy = chatSnap.data().deletedBy || [];
+      if (!deletedBy.includes(userId)) {
         await updateDoc(chatRef, {
-          participants: []
-        });
-      } else {
-        await updateDoc(chatRef, {
-          participants: newParticipants
+          deletedBy: [...deletedBy, userId]
         });
       }
     }

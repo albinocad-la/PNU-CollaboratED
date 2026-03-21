@@ -3,6 +3,7 @@ import { signInWithPopup } from 'firebase/auth';
 import { motion } from 'motion/react';
 import { LogIn, Loader2, AlertCircle } from 'lucide-react';
 import { useState } from 'react';
+import SlideButton from '../components/SlideButton';
 
 export default function Login() {
   const [loading, setLoading] = useState(false);
@@ -63,6 +64,10 @@ export default function Login() {
           )}
           {loading ? 'Signing in...' : 'Sign in with Google'}
         </button>
+
+        <div className="mt-8 flex justify-center">
+          <SlideButton label="Remember Me" />
+        </div>
         
         <p className="mt-8 text-xs text-slate-500">
           By signing in, you agree to our Terms of Service and Privacy Policy.

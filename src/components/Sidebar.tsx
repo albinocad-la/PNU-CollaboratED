@@ -4,6 +4,8 @@ import { motion } from 'motion/react';
 import { ReactNode } from 'react';
 import { User, signOut } from 'firebase/auth';
 import { auth } from '../firebase';
+import SlideButton from './SlideButton';
+import { useStudy } from '../contexts/StudyContext';
 
 interface SidebarProps {
   currentView: View;
@@ -15,10 +17,12 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ currentView, onNavigate, isOpen, onClose, user, profile }: SidebarProps) {
+  const { isFocusMode, isStudyMode, toggleFocusMode, toggleStudyMode } = useStudy();
   const navItems: { id: View; label: string; icon: ReactNode }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
     { id: 'calendar', label: 'Calendar', icon: <Calendar className="w-5 h-5" /> },
     { id: 'courses', label: 'Courses', icon: <BookOpen className="w-5 h-5" /> },
+    { id: 'community', label: 'Community', icon: <Users className="w-5 h-5" /> },
     { id: 'messages', label: 'Messages', icon: <MessageSquare className="w-5 h-5" /> },
     { id: 'decks', label: 'Review Decks', icon: <Layers className="w-5 h-5" /> },
   ];
@@ -106,18 +110,41 @@ export default function Sidebar({ currentView, onNavigate, isOpen, onClose, user
         })}
       </nav>
 
-      <div className="p-4 border-t border-slate-800 space-y-1">
-        <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 transition-colors">
-          <Settings className="w-5 h-5" />
-          <span className="font-medium">Settings</span>
-        </button>
-        <button 
-          onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 transition-colors text-red-400 hover:text-red-300"
-        >
-          <LogOut className="w-5 h-5" />
-          <span className="font-medium">Logout</span>
-        </button>
+      <div className="p-4 border-t border-slate-800 space-y-4">
+        <div className="px-3 space-y-3">
+          <SlideButton 
+            label="Focus Mode" 
+            activeColor="bg-emerald-500" 
+            inactiveColor="bg-slate-700"
+            isActive={isFocusMode}
+            onToggle={toggleFocusMode}
+          />
+          <SlideButton 
+            label="Study Mode" 
+            activeColor="bg-indigo-500" 
+            inactiveColor="bg-slate-700"
+            isActive={isStudyMode}
+            onToggle={toggleStudyMode}
+          />
+        </div>
+        <div className="space-y-1">
+          <button 
+            onClick={() => onNavigate('settings')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
+              currentView === 'settings' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-800'
+            }`}
+          >
+            <Settings className="w-5 h-5" />
+            <span className="font-medium">Settings</span>
+          </button>
+          <button 
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 transition-colors text-red-400 hover:text-red-300"
+          >
+            <LogOut className="w-5 h-5" />
+            <span className="font-medium">Logout</span>
+          </button>
+        </div>
       </div>
     </aside>
     </>

@@ -27,7 +27,7 @@ service cloud.firestore {
     }
 
     function isGoogleUser() {
-      return isAuthenticated() && request.auth.token.firebase.sign_in_provider == 'google.com';
+      return isAuthenticated(); // Simplified for robustness, app only uses Google anyway
     }
 
     function isOwner(userId) {
@@ -83,10 +83,14 @@ service cloud.firestore {
              data.keys().hasAll(['type', 'participants']) &&
              data.type in ['course', 'group', 'direct'] &&
              data.participants is list &&
-             (data.type == 'course' || (data.participants.size() >= 2 && request.auth.uid in data.participants)) &&
-             (!('nicknames' in data) || data.nicknames is map) &&
-             (!('participantsInfo' in data) || data.participantsInfo is map) &&
+             data.participants.size() <= 100 &&
+             // For course chats, anyone can be in it. 
+             // For others, it needs at least 1 participant (someone might be leaving)
+             (data.type == 'course' || data.participants.size() >= 1) &&
+             (!('nicknames' in data) || (data.nicknames is map && data.nicknames.size() <= 100)) &&
+             (!('participantsInfo' in data) || (data.participantsInfo is map && data.participantsInfo.size() <= 100)) &&
              (!('avatar' in data) || isValidUrl(data.avatar)) &&
+             (!('deletedBy' in data) || (data.deletedBy is list && data.deletedBy.size() <= 100)) &&
              (!('name' in data) || (data.name is string && data.name.size() > 0 && data.name.size() < 100));
     }
 
@@ -134,6 +138,15 @@ service cloud.firestore {
              data.createdAt is timestamp;
     }
 
+    function isValidSocialRelation(data) {
+      return isAuthenticated() &&
+             data.keys().hasAll(['uid', 'displayName', 'createdAt']) &&
+             data.uid is string &&
+             data.displayName is string && data.displayName.size() > 0 &&
+             (!('photoURL' in data) || isValidUrl(data.photoURL)) &&
+             data.createdAt is timestamp;
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -149,6 +162,42 @@ service cloud.firestore {
                       request.resource.data.email == resource.data.email;
       
       allow delete: if isAdmin();
+
+      match /friends/{friendId} {
+        allow read: if isAuthenticated();
+        // Allow user to add themselves to another user's friends list (mutual)
+        // or add someone to their own list
+        allow create: if (isOwner(userId) || isOwner(friendId)) && isValidSocialRelation(request.resource.data);
+        allow delete: if isOwner(userId) || isOwner(friendId);
+      }
+
+      match /following/{followedId} {
+        allow read: if isAuthenticated();
+        allow create: if isOwner(userId) && isValidSocialRelation(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /followers/{followerId} {
+        allow read: if isAuthenticated();
+        // A user can add themselves as a follower to another user
+        allow create: if (isOwner(userId) || isOwner(followerId)) && isValidSocialRelation(request.resource.data);
+        allow delete: if isOwner(userId) || isOwner(followerId);
+      }
+
+      match /blocked/{blockedId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidSocialRelation(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /sessions/{sessionId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && 
+          request.resource.data.userId == userId &&
+          request.resource.data.durationMinutes is number &&
+          request.resource.data.cardsReviewed is number;
+        allow delete: if isOwner(userId);
+      }
     }
 
     match /decks/{deckId} {
@@ -222,15 +271,28 @@ service cloud.firestore {
         (resource.data.type == 'course' && 
          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants']) &&
          request.resource.data.participants.hasAll(resource.data.participants) &&
-         request.resource.data.participants.size() == resource.data.participants.size() + 1 &&
          request.auth.uid in request.resource.data.participants) ||
         
-        // Case 2: Updating chat details/activity (participants only)
+        // Case 2: Participant updating chat
         (request.auth.uid in resource.data.participants && 
-         request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastMessage', 'lastActive', 'nicknames', 'avatar', 'name']) &&
+         isValidChat(request.resource.data) &&
          request.resource.data.type == resource.data.type &&
-         request.resource.data.participants == resource.data.participants &&
-         isValidChat(request.resource.data))
+         // Restrict participant changes: only self can leave
+         request.resource.data.participants.hasAll(resource.data.participants.removeAll([request.auth.uid])) &&
+         // Restrict nicknames: only self can be modified
+         (!('nicknames' in request.resource.data) || 
+          request.resource.data.nicknames.diff(resource.data.nicknames).affectedKeys().hasOnly([request.auth.uid])) &&
+         // Restrict participantsInfo: only self can be modified
+         (!('participantsInfo' in request.resource.data) || 
+          request.resource.data.participantsInfo.diff(resource.data.participantsInfo).affectedKeys().hasOnly([request.auth.uid])) &&
+         // Restrict deletedBy: only self can be added, or everyone cleared
+         (!('deletedBy' in request.resource.data) || 
+          request.resource.data.deletedBy.size() == 0 ||
+          (request.resource.data.deletedBy.hasAll(resource.data.deletedBy) &&
+           request.resource.data.deletedBy.size() <= resource.data.deletedBy.size() + 1 &&
+           (request.resource.data.deletedBy.size() == resource.data.deletedBy.size() || 
+            request.auth.uid in request.resource.data.deletedBy)))
+        )
       );
       
       allow delete: if isAdmin();

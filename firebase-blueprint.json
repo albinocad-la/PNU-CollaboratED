@@ -84,7 +84,10 @@
         "lastActive": { "type": "string", "format": "date-time", "description": "Timestamp of the last activity." },
         "avatar": { "type": "string", "description": "URL of the chat avatar (for direct chats)." },
         "color": { "type": "string", "description": "Tailwind color class (for course chats)." },
-        "code": { "type": "string", "description": "Course code (for course chats)." }
+        "code": { "type": "string", "description": "Course code (for course chats)." },
+        "participantsInfo": { "type": "object", "description": "Map of user UIDs to their display name and photo URL." },
+        "nicknames": { "type": "object", "description": "Map of user UIDs to their custom nicknames in the chat." },
+        "deletedBy": { "type": "array", "items": { "type": "string" }, "description": "List of user UIDs who have 'deleted' the chat from their view." }
       },
       "required": ["type", "participants"]
     },
@@ -102,7 +105,17 @@
         "timestamp": { "type": "string", "format": "date-time", "description": "When the message was sent." },
         "type": { "type": "string", "enum": ["text", "image", "file"], "description": "The type of message content." },
         "fileUrl": { "type": "string", "description": "URL of the attached file/image." },
-        "fileName": { "type": "string", "description": "Original name of the attached file." }
+        "fileName": { "type": "string", "description": "Original name of the attached file." },
+        "isDeleted": { "type": "boolean", "description": "Whether the message has been 'unsent'." },
+        "replyTo": { 
+          "type": "object", 
+          "properties": {
+            "id": { "type": "string" },
+            "senderName": { "type": "string" },
+            "content": { "type": "string" }
+          },
+          "description": "Information about the message being replied to."
+        }
       },
       "required": ["chatId", "senderId", "content", "timestamp"]
     },
@@ -134,12 +147,95 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["deckId", "front", "back"]
+    },
+    "Friend": {
+      "title": "Friend",
+      "description": "A mutual friend relationship.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The UID of the friend." },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "createdAt"]
+    },
+    "Following": {
+      "title": "Following",
+      "description": "A user being followed.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The UID of the followed user." },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "createdAt"]
+    },
+    "Follower": {
+      "title": "Follower",
+      "description": "A user who is following this user.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The UID of the follower." },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "createdAt"]
+    },
+    "BlockedUser": {
+      "title": "Blocked User",
+      "description": "A user who has been blocked.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The UID of the blocked user." },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "createdAt"]
+    },
+    "StudySession": {
+      "title": "Study Session",
+      "description": "A record of a study session, including duration and cards reviewed.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "type": "string", "format": "date-time" },
+        "durationMinutes": { "type": "number" },
+        "cardsReviewed": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "startTime", "endTime", "durationMinutes", "cardsReviewed"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "Collection of user profiles."
+    },
+    "/users/{userId}/friends/{friendId}": {
+      "schema": "Friend",
+      "description": "Subcollection of friends for a user."
+    },
+    "/users/{userId}/following/{followedId}": {
+      "schema": "Following",
+      "description": "Subcollection of users being followed."
+    },
+    "/users/{userId}/followers/{followerId}": {
+      "schema": "Follower",
+      "description": "Subcollection of followers for a user."
+    },
+    "/users/{userId}/blocked/{blockedId}": {
+      "schema": "BlockedUser",
+      "description": "Subcollection of blocked users for a user."
+    },
+    "/users/{userId}/sessions/{sessionId}": {
+      "schema": "StudySession",
+      "description": "Subcollection of study sessions for a user."
     },
     "/todos/{todoId}": {
       "schema": "Todo",

@@ -1,4 +1,22 @@
-export type View = 'dashboard' | 'courses' | 'messages' | 'decks' | 'course-detail' | 'profile' | 'calendar';
+export type View = 'dashboard' | 'courses' | 'messages' | 'decks' | 'course-detail' | 'profile' | 'calendar' | 'settings' | 'community';
+
+export interface UserProfile {
+  uid: string;
+  displayName: string;
+  email: string;
+  photoURL?: string;
+  ugNumber?: string;
+  bio?: string;
+  lastSeen?: any;
+  updatedAt?: any;
+}
+
+export interface SocialRelation {
+  uid: string;
+  displayName: string;
+  photoURL?: string;
+  createdAt: any;
+}
 
 export interface LearningMaterial {
   id: string;
@@ -63,6 +81,7 @@ export interface Chat {
   avatar?: string;
   color?: string;
   nicknames?: { [userId: string]: string };
+  deletedBy?: string[];
 }
 
 export interface ReviewDeck {
@@ -82,4 +101,14 @@ export interface Flashcard {
   front: string;
   back: string;
   createdAt?: any;
+}
+
+export interface StudySession {
+  id: string;
+  userId: string;
+  startTime: any;
+  endTime: any;
+  durationMinutes: number;
+  cardsReviewed: number;
+  createdAt: any;
 }
