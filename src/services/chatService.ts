@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { Chat, Message } from '../types';
+import imageCompression from 'browser-image-compression';
 
 export enum OperationType {
   CREATE = 'create',
@@ -130,9 +131,10 @@ export const sendMessage = async (
     content,
     timestamp: serverTimestamp(),
     type,
-    fileUrl,
-    fileName
   };
+
+  if (fileUrl !== undefined) messageData.fileUrl = fileUrl;
+  if (fileName !== undefined) messageData.fileName = fileName;
 
   if (replyTo) {
     messageData.replyTo = replyTo;
@@ -177,12 +179,12 @@ export const getOrCreateDirectChat = async (user1Id: string, user1Name: string, 
       type: 'direct',
       participants: [user1Id, user2Id],
       participantsInfo: {
-        [user1Id]: { displayName: user1Name, photoURL: user1Avatar },
-        [user2Id]: { displayName: user2Name, photoURL: user2Avatar }
+        [user1Id]: { displayName: user1Name, photoURL: user1Avatar || "" },
+        [user2Id]: { displayName: user2Name, photoURL: user2Avatar || "" }
       },
       lastMessage: 'Started a new conversation',
       lastActive: serverTimestamp(),
-      avatar: user2Avatar // Default avatar
+      avatar: user2Avatar || "" // Default avatar
     });
 
     return newChatRef.id;
@@ -248,41 +250,95 @@ export const getAllCourseChats = async () => {
 };
 
 export const uploadFile = async (file: File): Promise<string> => {
-  // If file is small enough (< 800KB to be safe with base64 overhead in 1MB Firestore doc), use data URL
-  if (file.size < 800 * 1024) {
+  let fileToUpload = file;
+
+  // Try to compress images if they are too large (> 750KB)
+  if (file.type.startsWith('image/') && file.size > 750 * 1024) {
+    try {
+      const options = {
+        maxSizeMB: 0.6, // Target even smaller to ensure it fits
+        maxWidthOrHeight: 1280, // Slightly smaller dimensions for better compression
+        useWebWorker: true,
+        initialQuality: 0.6
+      };
+      fileToUpload = await imageCompression(file, options);
+    } catch (error) {
+      console.warn('Image compression failed, proceeding with original file...', error);
+    }
+  }
+
+  // If file is small enough (< 750KB to be safe with base64 overhead in 1MB Firestore doc), use data URL
+  if (fileToUpload.size < 750 * 1024) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => resolve(e.target?.result as string);
       reader.onerror = (e) => reject(e);
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(fileToUpload);
     });
   }
 
-  // For larger files, use a public temporary file upload service
-  // Note: This is a fallback since we don't have Firebase Storage provisioned
+  // For larger files, use the server-side proxy to bypass CORS and ensure reliability
   try {
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', fileToUpload);
     
-    // Using tmpfiles.org as a public temporary storage
-    const response = await fetch('https://tmpfiles.org/api/v1/upload', {
+    const response = await fetch('/api/upload', {
       method: 'POST',
       body: formData
     });
     
-    if (!response.ok) throw new Error('Upload failed');
-    
-    const data = await response.json();
-    // The API returns a URL like https://tmpfiles.org/12345/filename
-    // We need the direct link which is usually https://tmpfiles.org/dl/12345/filename
-    const url = data.data.url;
-    return url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+    if (response.ok) {
+      const data = await response.json();
+      if (data.url) {
+        return data.url;
+      }
+    } else {
+      const errorData = await response.json();
+      console.warn('Server upload proxy failed:', errorData.error);
+    }
   } catch (error) {
-    console.error('Error uploading to public service:', error);
-    // Fallback to data URL even if it might fail Firestore limit, 
-    // or throw error if we want to be strict
-    throw new Error('File too large for Firestore and public upload failed');
+    console.warn('Upload to server proxy failed, trying direct fallbacks...', error);
   }
+
+  // Direct fallbacks (in case the server proxy is unavailable or fails)
+  // Service 1: uguu.se (Very reliable for direct links, 100MB limit)
+  try {
+    const formData = new FormData();
+    formData.append('files[]', fileToUpload);
+    const response = await fetch('https://uguu.se/upload.php', {
+      method: 'POST',
+      body: formData
+    });
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success) {
+        return data.files[0].url;
+      }
+    }
+  } catch (error) {
+    console.warn('Direct upload to uguu.se failed:', error);
+  }
+
+  // Service 2: catbox.moe (Excellent for direct links, 200MB limit)
+  try {
+    const formData = new FormData();
+    formData.append('reqtype', 'fileupload');
+    formData.append('fileToUpload', fileToUpload);
+    const response = await fetch('https://catbox.moe/user/api.php', {
+      method: 'POST',
+      body: formData
+    });
+    if (response.ok) {
+      const url = await response.text();
+      if (url.startsWith('http')) {
+        return url.trim();
+      }
+    }
+  } catch (error) {
+    console.warn('Direct upload to catbox.moe failed:', error);
+  }
+
+  throw new Error('File too large for Firestore and all upload services failed. Please try a smaller file (< 750KB) or an image that can be compressed further.');
 };
 
 export const joinChat = async (chatId: string, userId: string) => {
@@ -306,11 +362,11 @@ export const joinChat = async (chatId: string, userId: string) => {
 export const createGroupChat = async (name: string, participants: { id: string, displayName: string, photoURL: string }[], creatorId: string, creatorName: string, creatorAvatar: string) => {
   try {
     const participantsInfo: { [userId: string]: { displayName: string, photoURL: string } } = {
-      [creatorId]: { displayName: creatorName, photoURL: creatorAvatar }
+      [creatorId]: { displayName: creatorName, photoURL: creatorAvatar || "" }
     };
     
     participants.forEach(p => {
-      participantsInfo[p.id] = { displayName: p.displayName, photoURL: p.photoURL };
+      participantsInfo[p.id] = { displayName: p.displayName, photoURL: p.photoURL || "" };
     });
 
     const chatData = {

@@ -119,9 +119,19 @@ const Community: React.FC<CommunityProps> = ({ currentUser }) => {
         </div>
         <div>
           <h3 className="font-bold text-slate-800 dark:text-slate-100">{user.displayName}</h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            {isFriend(user.uid) ? 'Friend' : isFollowing(user.uid) ? 'Following' : 'Student'}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {isFriend(user.uid) ? 'Friend' : isFollowing(user.uid) ? 'Following' : 'Student'}
+            </p>
+            {('ugNumber' in user) && user.ugNumber && (
+              <>
+                <span className="text-slate-300">•</span>
+                <span className="text-[10px] font-mono text-slate-400">
+                  {user.ugNumber}
+                </span>
+              </>
+            )}
+          </div>
         </div>
       </div>
 

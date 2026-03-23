@@ -24,6 +24,7 @@ import {
   deleteLearningMaterial
 } from '../services/materialService';
 import { subscribeToCourseDecks } from '../services/deckService';
+import { uploadFile } from '../services/chatService';
 import { auth } from '../firebase';
 import { LearningMaterial, ReviewDeck } from '../types';
 
@@ -49,6 +50,7 @@ export default function CourseDetail({ courseId, onBack, onChatClick, onReviewCl
   const [localMaterials, setLocalMaterials] = useState<LearningMaterial[]>([]);
   const [courseDecks, setCourseDecks] = useState<ReviewDeck[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadMode, setUploadMode] = useState<'link' | 'file'>('link');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -113,35 +115,36 @@ export default function CourseDetail({ courseId, onBack, onChatClick, onReviewCl
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check file size (limit to 500KB for base64 storage in Firestore)
-    if (file.size > 500 * 1024) {
-      setError('File is too large. Please upload files smaller than 500KB.');
+    // Check file size (limit to 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setError('File is too large. Please upload files smaller than 10MB.');
       return;
     }
 
     setIsUploading(true);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
-      setNewMaterialUrl(base64);
+    setError(null);
+    try {
+      const fileUrl = await uploadFile(file);
+      setNewMaterialUrl(fileUrl);
+      setUploadMode('file');
       if (!newMaterialTitle) {
         setNewMaterialTitle(file.name);
       }
       // Auto-detect type
       if (file.type === 'application/pdf') setNewMaterialType('pdf');
       else if (file.type.startsWith('video/')) setNewMaterialType('video');
+      else if (file.type.includes('word') || file.type.includes('text')) setNewMaterialType('study-guide');
       
+    } catch (err) {
+      console.error('Error uploading file:', err);
+      setError(err instanceof Error ? err.message : 'Failed to upload file.');
+    } finally {
       setIsUploading(false);
-    };
-    reader.onerror = () => {
-      setError('Failed to read file.');
-      setIsUploading(false);
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const getMaterialIcon = (type: string) => {
@@ -503,40 +506,45 @@ export default function CourseDetail({ courseId, onBack, onChatClick, onReviewCl
                   <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
                     <button 
                       type="button"
-                      onClick={() => { setNewMaterialUrl(''); setNewMaterialType('pdf'); }}
-                      className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${!newMaterialUrl.startsWith('data:') ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`}
+                      onClick={() => { setUploadMode('link'); setNewMaterialUrl(''); }}
+                      className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${uploadMode === 'link' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`}
                     >
                       Add Link
                     </button>
                     <button 
                       type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${newMaterialUrl.startsWith('data:') ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`}
+                      onClick={() => { setUploadMode('file'); fileInputRef.current?.click(); }}
+                      className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${uploadMode === 'file' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`}
                     >
                       Upload File
                     </button>
                   </div>
 
-                  {newMaterialUrl.startsWith('data:') ? (
+                  {uploadMode === 'file' && newMaterialUrl ? (
                     <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-xl flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-white dark:bg-slate-800 flex items-center justify-center">
-                          {getMaterialIcon(newMaterialType)}
+                          {isUploading ? <Loader2 className="w-4 h-4 animate-spin text-indigo-500" /> : getMaterialIcon(newMaterialType)}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate max-w-[180px]">{newMaterialTitle || 'File selected'}</p>
-                          <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold uppercase tracking-wider">{newMaterialType}</p>
+                          <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate max-w-[180px]">{newMaterialTitle || 'File uploaded'}</p>
+                          <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold uppercase tracking-wider">{isUploading ? 'Uploading...' : newMaterialType}</p>
                         </div>
                       </div>
                       <button 
                         type="button"
-                        onClick={() => { setNewMaterialUrl(''); setNewMaterialTitle(''); }}
+                        onClick={() => { setNewMaterialUrl(''); setNewMaterialTitle(''); setUploadMode('link'); }}
                         className="p-1.5 hover:bg-white dark:hover:bg-slate-700 rounded-lg transition-colors text-slate-400 hover:text-rose-500"
                       >
                         <X className="w-4 h-4" />
                       </button>
                     </div>
-                  ) : (
+                  ) : uploadMode === 'file' && isUploading ? (
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-center gap-3">
+                      <Loader2 className="w-5 h-5 animate-spin text-indigo-500" />
+                      <span className="text-sm font-medium text-slate-500">Uploading file...</span>
+                    </div>
+                  ) : uploadMode === 'link' ? (
                     <div>
                       <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Resource URL</label>
                       <input 
@@ -548,6 +556,14 @@ export default function CourseDetail({ courseId, onBack, onChatClick, onReviewCl
                         className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-900/30 transition-all outline-none text-slate-800 dark:text-slate-200"
                       />
                     </div>
+                  ) : (
+                    <div 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="p-8 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all"
+                    >
+                      <Plus className="w-8 h-8 text-slate-300" />
+                      <p className="text-sm font-medium text-slate-500">Click to select a file (Max 10MB)</p>
+                    </div>
                   )}
                 </div>
 
@@ -556,7 +572,7 @@ export default function CourseDetail({ courseId, onBack, onChatClick, onReviewCl
                   ref={fileInputRef}
                   onChange={handleFileChange}
                   className="hidden"
-                  accept=".pdf,.doc,.docx,.txt,video/*"
+                  accept=".pdf,.doc,.docx,.txt,video/*,image/*"
                 />
                 <div className="pt-4">
                   <button 

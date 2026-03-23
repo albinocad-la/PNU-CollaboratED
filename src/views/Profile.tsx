@@ -153,6 +153,7 @@ export default function Profile({ user }: ProfileProps) {
       const docRef = doc(db, 'users', user.uid);
       await setDoc(docRef, {
         ...profileData,
+        displayNameLowercase: profileData.displayName.toLowerCase(),
         updatedAt: serverTimestamp(),
       }, { merge: true });
       

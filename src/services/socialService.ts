@@ -123,14 +123,48 @@ export const subscribeToBlockedUsers = (userId: string, callback: (blocked: Soci
 export const searchUsers = async (searchTerm: string): Promise<UserProfile[]> => {
   if (!searchTerm || searchTerm.length < 2) return [];
   
-  // Firestore doesn't support full-text search easily, so we do a simple prefix search
-  const q = query(
+  const queryTerm = searchTerm.toLowerCase();
+  const upperTerm = searchTerm.toUpperCase();
+  
+  // Firestore doesn't support OR queries across different fields with range filters easily,
+  // so we perform two separate queries and merge the results.
+  
+  // 1. Search by Name (case-insensitive via lowercase field)
+  const nameQuery = query(
     collection(db, 'users'),
-    where('displayName', '>=', searchTerm),
-    where('displayName', '<=', searchTerm + '\uf8ff'),
+    where('displayNameLowercase', '>=', queryTerm),
+    where('displayNameLowercase', '<=', queryTerm + '\uf8ff'),
     limit(10)
   );
 
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => doc.data() as UserProfile);
+  // 2. Search by UG Number (prefix search)
+  // We search both as-is and uppercase since UG numbers are typically uppercase
+  const ugQuery = query(
+    collection(db, 'users'),
+    where('ugNumber', '>=', upperTerm),
+    where('ugNumber', '<=', upperTerm + '\uf8ff'),
+    limit(10)
+  );
+
+  try {
+    const [nameSnap, ugSnap] = await Promise.all([
+      getDocs(nameQuery),
+      getDocs(ugQuery)
+    ]);
+
+    const resultsMap = new Map<string, UserProfile>();
+    
+    nameSnap.docs.forEach(doc => {
+      resultsMap.set(doc.id, doc.data() as UserProfile);
+    });
+    
+    ugSnap.docs.forEach(doc => {
+      resultsMap.set(doc.id, doc.data() as UserProfile);
+    });
+
+    return Array.from(resultsMap.values()).slice(0, 10);
+  } catch (error) {
+    console.error('Error searching users:', error);
+    return [];
+  }
 };

@@ -5,21 +5,32 @@ import { assignments, courses } from '../data';
 import { motion, AnimatePresence } from 'motion/react';
 import SlideButton from './SlideButton';
 import { useStudy } from '../contexts/StudyContext';
+import { useSearch } from '../contexts/SearchContext';
+import { View } from '../types';
 
 interface HeaderProps {
   title: string;
   onMenuToggle: () => void;
   onProfileClick: () => void;
+  onNavigate: (view: View) => void;
   onBack?: () => void;
   showBack?: boolean;
   user: User;
   profile: any;
 }
 
-export default function Header({ title, onMenuToggle, onProfileClick, onBack, showBack, user, profile }: HeaderProps) {
+export default function Header({ title, onMenuToggle, onProfileClick, onNavigate, onBack, showBack, user, profile }: HeaderProps) {
   const { isStudyMode, toggleStudyMode } = useStudy();
+  const { searchQuery, setSearchQuery, setIsSearchActive } = useSearch();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const notificationRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (title !== 'Search Results' && searchQuery) {
+      setSearchQuery('');
+      setIsSearchActive(false);
+    }
+  }, [title]);
   
   const displayName = profile?.displayName || user.displayName || 'User';
   const photoURL = profile?.photoURL || user.photoURL || `https://ui-avatars.com/api/?name=${displayName}`;
@@ -71,6 +82,16 @@ export default function Header({ title, onMenuToggle, onProfileClick, onBack, sh
           <input
             type="text"
             placeholder="Search..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              if (e.target.value.trim()) {
+                onNavigate('search');
+                setIsSearchActive(true);
+              } else {
+                setIsSearchActive(false);
+              }
+            }}
             className="pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border-transparent rounded-full focus:bg-white dark:focus:bg-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-500/20 transition-all w-48 lg:w-64 text-sm outline-none dark:text-slate-100"
           />
         </div>

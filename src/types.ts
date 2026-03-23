@@ -1,8 +1,9 @@
-export type View = 'dashboard' | 'courses' | 'messages' | 'decks' | 'course-detail' | 'profile' | 'calendar' | 'settings' | 'community';
+export type View = 'dashboard' | 'courses' | 'messages' | 'decks' | 'course-detail' | 'profile' | 'calendar' | 'settings' | 'community' | 'search';
 
 export interface UserProfile {
   uid: string;
   displayName: string;
+  displayNameLowercase?: string;
   email: string;
   photoURL?: string;
   ugNumber?: string;

@@ -17,6 +17,7 @@ import Profile from './views/Profile';
 import Calendar from './views/Calendar';
 import Settings from './views/Settings';
 import Community from './views/Community';
+import SearchResults from './views/SearchResults';
 import { auth, db } from './firebase';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { doc, onSnapshot, setDoc, serverTimestamp, getDocFromServer } from 'firebase/firestore';
@@ -135,6 +136,7 @@ export default function App() {
             const newProfile = {
               uid: user.uid,
               displayName: user.displayName || '',
+              displayNameLowercase: (user.displayName || '').toLowerCase(),
               photoURL: user.photoURL || '',
               email: user.email || '',
               updatedAt: serverTimestamp()
@@ -189,6 +191,7 @@ export default function App() {
       case 'profile': return 'My Profile';
       case 'settings': return 'Settings';
       case 'community': return 'Community';
+      case 'search': return 'Search Results';
       default: return 'PNU CollaboratED';
     }
   };
@@ -222,6 +225,17 @@ export default function App() {
       case 'profile': return <Profile key="profile" user={user!} />;
       case 'settings': return <Settings key="settings" user={user!} profile={profile} onLogout={handleLogout} />;
       case 'community': return <Community key="community" currentUser={profile as UserProfile} />;
+      case 'search': return <SearchResults key="search" onNavigate={(view: View, id?: string) => {
+        if (view === 'course-detail' && id) {
+          handleCourseClick(id);
+        } else if (view === 'messages' && id) {
+          handleChatClick(id);
+        } else if (view === 'decks' && id) {
+          handleReviewClick(id);
+        } else {
+          handleNavigate(view);
+        }
+      }} />;
       default: return <Dashboard key="dashboard" user={user!} profile={profile} onCourseClick={handleCourseClick} onChatClick={handleChatClick} onViewAllCourses={() => handleNavigate('courses')} onViewCalendar={() => handleNavigate('calendar')} onNavigate={handleNavigate} />;
     }
   };
@@ -318,6 +332,7 @@ export default function App() {
                 title={getTitle()} 
                 onMenuToggle={() => setIsSidebarOpen(!isSidebarOpen)} 
                 onProfileClick={() => handleNavigate('profile')}
+                onNavigate={handleNavigate}
                 onBack={handleBack}
                 showBack={viewHistory.length > 0}
                 user={user}
