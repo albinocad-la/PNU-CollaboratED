@@ -13,7 +13,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { assignments, courses } from '../data';
-import { db, auth } from '../firebase';
+import { db, auth, handleFirestoreError, OperationType, isQuotaExceeded } from '../firebase';
 import SlideButton from '../components/SlideButton';
 import { useStudy } from '../contexts/StudyContext';
 import { 
@@ -127,6 +127,9 @@ export default function Calendar() {
     e.preventDefault();
     if (!newTodo.trim() || !selectedDay || !auth.currentUser) return;
 
+    // Check if quota was previously exceeded
+    if (isQuotaExceeded()) return;
+
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`;
     
     try {
@@ -139,25 +142,31 @@ export default function Calendar() {
       });
       setNewTodo('');
     } catch (error) {
-      console.error("Error adding todo:", error);
+      handleFirestoreError(error, OperationType.WRITE, 'todos');
     }
   };
 
   const toggleTodo = async (todo: Todo) => {
+    // Check if quota was previously exceeded
+    if (isQuotaExceeded()) return;
+
     try {
       await updateDoc(doc(db, 'todos', todo.id), {
         completed: !todo.completed
       });
     } catch (error) {
-      console.error("Error toggling todo:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `todos/${todo.id}`);
     }
   };
 
   const deleteTodo = async (id: string) => {
+    // Check if quota was previously exceeded
+    if (isQuotaExceeded()) return;
+
     try {
       await deleteDoc(doc(db, 'todos', id));
     } catch (error) {
-      console.error("Error deleting todo:", error);
+      handleFirestoreError(error, OperationType.DELETE, `todos/${id}`);
     }
   };
 

@@ -8,71 +8,29 @@ import {
   onSnapshot,
   Timestamp
 } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { db, auth, handleFirestoreError, OperationType, isQuotaExceeded } from '../firebase';
 import { useState, useEffect } from 'react';
 
-export enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId: string | undefined;
-    email: string | null | undefined;
-    emailVerified: boolean | undefined;
-    isAnonymous: boolean | undefined;
-    tenantId: string | null | undefined;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
-
-/**
- * Updates the current user's global lastSeen timestamp.
- */
 export const updateGlobalPresence = async () => {
   const user = auth.currentUser;
   if (!user) return;
+
+  // Throttle to once every 60 seconds across tabs using localStorage
+  const lastUpdateKey = `last_presence_update_${user.uid}`;
+  const lastUpdate = localStorage.getItem(lastUpdateKey);
+  const now = Date.now();
+  if (lastUpdate && now - parseInt(lastUpdate) < 55000) {
+    return;
+  }
+
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) return;
 
   const path = `users/${user.uid}`;
   const userRef = doc(db, 'users', user.uid);
   try {
     await setDoc(userRef, { lastSeen: serverTimestamp() }, { merge: true });
+    localStorage.setItem(lastUpdateKey, now.toString());
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -80,15 +38,28 @@ export const updateGlobalPresence = async () => {
 
 /**
  * Updates the current user's presence in a specific group.
+ * Throttled to once every 60 seconds per group.
  */
 export const updateGroupPresence = async (groupId: string) => {
   const user = auth.currentUser;
   if (!user) return;
 
+  // Throttle to once every 60 seconds per group
+  const lastUpdateKey = `last_group_presence_${groupId}_${user.uid}`;
+  const lastUpdate = localStorage.getItem(lastUpdateKey);
+  const now = Date.now();
+  if (lastUpdate && now - parseInt(lastUpdate) < 55000) {
+    return;
+  }
+
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) return;
+
   const path = `chats/${groupId}/presence/${user.uid}`;
   const presenceRef = doc(db, 'chats', groupId, 'presence', user.uid);
   try {
     await setDoc(presenceRef, { lastSeen: serverTimestamp() }, { merge: true });
+    localStorage.setItem(lastUpdateKey, now.toString());
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }

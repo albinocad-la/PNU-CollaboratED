@@ -29,9 +29,10 @@ import { UserProfile, SocialRelation } from '../types';
 
 interface CommunityProps {
   currentUser: UserProfile;
+  onNavigate: (view: any, id?: string) => void;
 }
 
-const Community: React.FC<CommunityProps> = ({ currentUser }) => {
+const Community: React.FC<CommunityProps> = ({ currentUser, onNavigate }) => {
   const [activeTab, setActiveTab] = useState<'search' | 'friends' | 'following' | 'followers'>('search');
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
@@ -99,7 +100,8 @@ const Community: React.FC<CommunityProps> = ({ currentUser }) => {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 flex items-center justify-between group hover:border-indigo-300 dark:hover:border-indigo-500 transition-all shadow-sm"
+      className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 flex items-center justify-between group hover:border-indigo-300 dark:hover:border-indigo-500 transition-all shadow-sm cursor-pointer"
+      onClick={() => onNavigate('profile', user.uid)}
     >
       <div className="flex items-center gap-4">
         <div className="relative">
@@ -135,10 +137,10 @@ const Community: React.FC<CommunityProps> = ({ currentUser }) => {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
         {isFriend(user.uid) ? (
           <button
-            onClick={() => unfriend(currentUser.uid, user.uid)}
+            onClick={(e) => { e.stopPropagation(); unfriend(currentUser.uid, user.uid); }}
             className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all"
             title="Unfriend"
           >
@@ -146,7 +148,7 @@ const Community: React.FC<CommunityProps> = ({ currentUser }) => {
           </button>
         ) : (
           <button
-            onClick={() => addFriend(currentUser, user as UserProfile)}
+            onClick={(e) => { e.stopPropagation(); addFriend(currentUser, user as UserProfile); }}
             className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-xl transition-all"
             title="Add Friend"
           >
@@ -156,14 +158,14 @@ const Community: React.FC<CommunityProps> = ({ currentUser }) => {
 
         {isFollowing(user.uid) ? (
           <button
-            onClick={() => unfollow(currentUser.uid, user.uid)}
+            onClick={(e) => { e.stopPropagation(); unfollow(currentUser.uid, user.uid); }}
             className="px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-600 transition-all"
           >
             Following
           </button>
         ) : (
           <button
-            onClick={() => follow(currentUser, user as UserProfile)}
+            onClick={(e) => { e.stopPropagation(); follow(currentUser, user as UserProfile); }}
             className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 shadow-sm shadow-indigo-200 dark:shadow-none transition-all"
           >
             Follow
@@ -171,7 +173,7 @@ const Community: React.FC<CommunityProps> = ({ currentUser }) => {
         )}
 
         <button
-          onClick={() => handleBlock(user)}
+          onClick={(e) => { e.stopPropagation(); handleBlock(user); }}
           className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all"
           title="Block User"
         >

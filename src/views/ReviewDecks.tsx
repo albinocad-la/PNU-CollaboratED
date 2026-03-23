@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from 'firebase/auth';
 import { ReviewDeck, Flashcard } from '../types';
-import { subscribeToDecks, getFlashcards, createDeck, addFlashcard, deleteDeck, generateFlashcardsFromFile } from '../services/deckService';
+import { subscribeToDecks, getFlashcards, createDeck, addFlashcard, addFlashcardsBatch, deleteDeck, generateFlashcardsFromFile } from '../services/deckService';
 import SlideButton from '../components/SlideButton';
 import { useStudy } from '../contexts/StudyContext';
 
@@ -87,8 +87,8 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
       if (uploadFile) {
         // Convert file to flashcards using Gemini
         const generatedCards = await generateFlashcardsFromFile(uploadFile);
-        for (const card of generatedCards) {
-          await addFlashcard(deckId, card.front, card.back);
+        if (generatedCards && generatedCards.length > 0) {
+          await addFlashcardsBatch(deckId, generatedCards);
         }
       }
       

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect, useRef } from 'react';
-import { db, auth } from '../firebase';
+import { db, auth, handleFirestoreError, OperationType, isQuotaExceeded } from '../firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 interface StudyContextType {
@@ -38,6 +38,13 @@ export const StudyProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         
         // Only save if session was at least 1 minute or cards were reviewed
         if (durationMinutes > 0 || cardsReviewed > 0) {
+          // Check if quota was previously exceeded
+          if (isQuotaExceeded()) {
+            sessionStartTime.current = null;
+            cardsReviewedRef.current = 0;
+            return;
+          }
+
           try {
             await addDoc(collection(db, 'users', user.uid, 'sessions'), {
               userId: user.uid,
@@ -48,7 +55,7 @@ export const StudyProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               createdAt: serverTimestamp()
             });
           } catch (error) {
-            console.error("Error saving study session:", error);
+            handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/sessions`);
           }
         }
         

@@ -10,11 +10,16 @@ import {
   serverTimestamp,
   limit
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, auth, handleFirestoreError, OperationType, isQuotaExceeded } from '../firebase';
 import { UserProfile, SocialRelation } from '../types';
 
 export const addFriend = async (currentUser: UserProfile, targetUser: UserProfile) => {
   if (!currentUser.uid || !targetUser.uid) return;
+
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
 
   const friendData = {
     uid: targetUser.uid,
@@ -30,18 +35,38 @@ export const addFriend = async (currentUser: UserProfile, targetUser: UserProfil
     createdAt: serverTimestamp()
   };
 
-  // Mutual friendship
-  await setDoc(doc(db, 'users', currentUser.uid, 'friends', targetUser.uid), friendData);
-  await setDoc(doc(db, 'users', targetUser.uid, 'friends', currentUser.uid), myData);
+  try {
+    // Mutual friendship
+    await setDoc(doc(db, 'users', currentUser.uid, 'friends', targetUser.uid), friendData);
+    await setDoc(doc(db, 'users', targetUser.uid, 'friends', currentUser.uid), myData);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `users/${currentUser.uid}/friends/${targetUser.uid}`);
+    throw error;
+  }
 };
 
 export const unfriend = async (currentUserId: string, targetUserId: string) => {
-  await deleteDoc(doc(db, 'users', currentUserId, 'friends', targetUserId));
-  await deleteDoc(doc(db, 'users', targetUserId, 'friends', currentUserId));
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
+  try {
+    await deleteDoc(doc(db, 'users', currentUserId, 'friends', targetUserId));
+    await deleteDoc(doc(db, 'users', targetUserId, 'friends', currentUserId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `users/${currentUserId}/friends/${targetUserId}`);
+    throw error;
+  }
 };
 
 export const follow = async (currentUser: UserProfile, targetUser: UserProfile) => {
   if (!currentUser.uid || !targetUser.uid) return;
+
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
 
   const followingData = {
     uid: targetUser.uid,
@@ -57,14 +82,29 @@ export const follow = async (currentUser: UserProfile, targetUser: UserProfile) 
     createdAt: serverTimestamp()
   };
 
-  // One-way follow
-  await setDoc(doc(db, 'users', currentUser.uid, 'following', targetUser.uid), followingData);
-  await setDoc(doc(db, 'users', targetUser.uid, 'followers', currentUser.uid), followerData);
+  try {
+    // One-way follow
+    await setDoc(doc(db, 'users', currentUser.uid, 'following', targetUser.uid), followingData);
+    await setDoc(doc(db, 'users', targetUser.uid, 'followers', currentUser.uid), followerData);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `users/${currentUser.uid}/following/${targetUser.uid}`);
+    throw error;
+  }
 };
 
 export const unfollow = async (currentUserId: string, targetUserId: string) => {
-  await deleteDoc(doc(db, 'users', currentUserId, 'following', targetUserId));
-  await deleteDoc(doc(db, 'users', targetUserId, 'followers', currentUserId));
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
+  try {
+    await deleteDoc(doc(db, 'users', currentUserId, 'following', targetUserId));
+    await deleteDoc(doc(db, 'users', targetUserId, 'followers', currentUserId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `users/${currentUserId}/following/${targetUserId}`);
+    throw error;
+  }
 };
 
 export const subscribeToFriends = (userId: string, callback: (friends: SocialRelation[]) => void) => {
@@ -91,6 +131,11 @@ export const subscribeToFollowers = (userId: string, callback: (followers: Socia
 export const blockUser = async (currentUserId: string, targetUser: UserProfile) => {
   if (!currentUserId || !targetUser.uid) return;
 
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
   const blockedData = {
     uid: targetUser.uid,
     displayName: targetUser.displayName,
@@ -98,19 +143,34 @@ export const blockUser = async (currentUserId: string, targetUser: UserProfile) 
     createdAt: serverTimestamp()
   };
 
-  // Add to blocked list
-  await setDoc(doc(db, 'users', currentUserId, 'blocked', targetUser.uid), blockedData);
-  
-  // Automatically unfriend and unfollow when blocking
-  await unfriend(currentUserId, targetUser.uid);
-  await unfollow(currentUserId, targetUser.uid);
-  // Also remove them from followers
-  await deleteDoc(doc(db, 'users', currentUserId, 'followers', targetUser.uid));
-  await deleteDoc(doc(db, 'users', targetUser.uid, 'following', currentUserId));
+  try {
+    // Add to blocked list
+    await setDoc(doc(db, 'users', currentUserId, 'blocked', targetUser.uid), blockedData);
+    
+    // Automatically unfriend and unfollow when blocking
+    await unfriend(currentUserId, targetUser.uid);
+    await unfollow(currentUserId, targetUser.uid);
+    // Also remove them from followers
+    await deleteDoc(doc(db, 'users', currentUserId, 'followers', targetUser.uid));
+    await deleteDoc(doc(db, 'users', targetUser.uid, 'following', currentUserId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `users/${currentUserId}/blocked/${targetUser.uid}`);
+    throw error;
+  }
 };
 
 export const unblockUser = async (currentUserId: string, targetUserId: string) => {
-  await deleteDoc(doc(db, 'users', currentUserId, 'blocked', targetUserId));
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
+  try {
+    await deleteDoc(doc(db, 'users', currentUserId, 'blocked', targetUserId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `users/${currentUserId}/blocked/${targetUserId}`);
+    throw error;
+  }
 };
 
 export const subscribeToBlockedUsers = (userId: string, callback: (blocked: SocialRelation[]) => void) => {

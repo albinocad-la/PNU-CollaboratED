@@ -9,7 +9,7 @@ import {
   deleteDoc,
   doc
 } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { db, auth, handleFirestoreError, OperationType, isQuotaExceeded } from '../firebase';
 import { LearningMaterial } from '../types';
 
 const COLLECTION_NAME = 'materials';
@@ -17,18 +17,39 @@ const COLLECTION_NAME = 'materials';
 export const addLearningMaterial = async (material: Omit<LearningMaterial, 'id' | 'createdAt' | 'addedBy'>) => {
   if (!auth.currentUser) throw new Error('User must be authenticated to add materials');
 
-  const docRef = await addDoc(collection(db, COLLECTION_NAME), {
-    ...material,
-    addedBy: auth.currentUser.uid,
-    createdAt: serverTimestamp()
-  });
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
 
-  return docRef.id;
+  try {
+    const docRef = await addDoc(collection(db, COLLECTION_NAME), {
+      ...material,
+      addedBy: auth.currentUser.uid,
+      createdAt: serverTimestamp()
+    });
+
+    return docRef.id;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, COLLECTION_NAME);
+    throw error;
+  }
 };
 
 export const deleteLearningMaterial = async (materialId: string) => {
   if (!auth.currentUser) throw new Error('User must be authenticated to delete materials');
-  await deleteDoc(doc(db, COLLECTION_NAME, materialId));
+  
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
+  try {
+    await deleteDoc(doc(db, COLLECTION_NAME, materialId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `${COLLECTION_NAME}/${materialId}`);
+    throw error;
+  }
 };
 
 export const subscribeToMaterials = (courseId: string, callback: (materials: LearningMaterial[]) => void) => {

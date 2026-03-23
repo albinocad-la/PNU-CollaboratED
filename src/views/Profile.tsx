@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
-import { db } from '../firebase';
+import { db, handleFirestoreError, OperationType, isQuotaExceeded } from '../firebase';
 import { doc, getDoc, setDoc, serverTimestamp, collection, onSnapshot } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import { User as UserIcon, Mail, Hash, FileText, Save, Camera, CheckCircle2, AlertCircle, Users, Heart, UserCheck } from 'lucide-react';
@@ -8,71 +8,22 @@ import SlideButton from '../components/SlideButton';
 import { useStudy } from '../contexts/StudyContext';
 import { UserProfile as UserProfileData } from '../types';
 
-// ... (handleFirestoreError and other interfaces)
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string;
-    email?: string | null;
-    emailVerified?: boolean;
-    isAnonymous?: boolean;
-    tenantId?: string | null;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null, user: User) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: user.uid,
-      email: user.email,
-      emailVerified: user.emailVerified,
-      isAnonymous: user.isAnonymous,
-      tenantId: user.tenantId,
-      providerInfo: user.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
-    },
-    operationType,
-    path
-  }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
-
 interface ProfileProps {
   user: User;
+  targetUserId?: string;
   key?: string;
 }
 
-export default function Profile({ user }: ProfileProps) {
+export default function Profile({ user, targetUserId }: ProfileProps) {
   const { isStudyMode, toggleStudyMode } = useStudy();
+  const effectiveUserId = targetUserId || user.uid;
+  const isOwnProfile = effectiveUserId === user.uid;
+
   const [profileData, setProfileData] = useState<UserProfileData>({
-    uid: user.uid,
-    displayName: user.displayName || '',
-    email: user.email || '',
-    photoURL: user.photoURL || '',
+    uid: effectiveUserId,
+    displayName: '',
+    email: '',
+    photoURL: '',
     ugNumber: '',
     bio: '',
   });
@@ -83,19 +34,19 @@ export default function Profile({ user }: ProfileProps) {
   const [studyStats, setStudyStats] = useState({ studyTime: 0, cardsReviewed: 0 });
 
   useEffect(() => {
-    if (!user.uid) return;
+    if (!effectiveUserId) return;
 
-    const unsubFriends = onSnapshot(collection(db, 'users', user.uid, 'friends'), (snap) => {
+    const unsubFriends = onSnapshot(collection(db, 'users', effectiveUserId, 'friends'), (snap) => {
       setSocialStats(prev => ({ ...prev, friends: snap.size }));
     });
-    const unsubFollowing = onSnapshot(collection(db, 'users', user.uid, 'following'), (snap) => {
+    const unsubFollowing = onSnapshot(collection(db, 'users', effectiveUserId, 'following'), (snap) => {
       setSocialStats(prev => ({ ...prev, following: snap.size }));
     });
-    const unsubFollowers = onSnapshot(collection(db, 'users', user.uid, 'followers'), (snap) => {
+    const unsubFollowers = onSnapshot(collection(db, 'users', effectiveUserId, 'followers'), (snap) => {
       setSocialStats(prev => ({ ...prev, followers: snap.size }));
     });
 
-    const sessionsRef = collection(db, 'users', user.uid, 'sessions');
+    const sessionsRef = collection(db, 'users', effectiveUserId, 'sessions');
     const unsubSessions = onSnapshot(sessionsRef, (snap) => {
       let totalMinutes = 0;
       let totalCards = 0;
@@ -113,18 +64,18 @@ export default function Profile({ user }: ProfileProps) {
       unsubFollowers();
       unsubSessions();
     };
-  }, [user.uid]);
+  }, [effectiveUserId]);
 
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const docRef = doc(db, 'users', user.uid);
+        const docRef = doc(db, 'users', effectiveUserId);
         const docSnap = await getDoc(docRef);
         
         if (docSnap.exists()) {
           setProfileData(docSnap.data() as UserProfileData);
-        } else {
-          // If no profile exists, pre-fill with auth data
+        } else if (isOwnProfile) {
+          // If no profile exists and it's own profile, pre-fill with auth data
           setProfileData({
             uid: user.uid,
             displayName: user.displayName || '',
@@ -142,10 +93,18 @@ export default function Profile({ user }: ProfileProps) {
     };
 
     fetchProfile();
-  }, [user.uid]);
+  }, [effectiveUserId, isOwnProfile, user.uid, user.displayName, user.email, user.photoURL]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isOwnProfile) return;
+
+    // Check if quota was previously exceeded
+    if (isQuotaExceeded()) {
+      setMessage({ type: 'error', text: 'Firestore quota exceeded. Please try again later.' });
+      return;
+    }
+
     setSaving(true);
     setMessage(null);
 
@@ -160,12 +119,7 @@ export default function Profile({ user }: ProfileProps) {
       setMessage({ type: 'success', text: 'Profile updated successfully!' });
       setTimeout(() => setMessage(null), 3000);
     } catch (error) {
-      console.error('Error saving profile:', error);
-      try {
-        handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`, user);
-      } catch (e) {
-        setMessage({ type: 'error', text: 'Failed to update profile. Please check permissions.' });
-      }
+      handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
     } finally {
       setSaving(false);
     }
@@ -188,10 +142,14 @@ export default function Profile({ user }: ProfileProps) {
     >
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-8">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-white tracking-tight mb-2">My Profile</h2>
-          <p className="text-slate-500 dark:text-slate-400 text-sm sm:text-base">Manage your personal information and account settings.</p>
+          <h2 className="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-white tracking-tight mb-2">
+            {isOwnProfile ? 'My Profile' : `${profileData.displayName}'s Profile`}
+          </h2>
+          <p className="text-slate-500 dark:text-slate-400 text-sm sm:text-base">
+            {isOwnProfile ? 'Manage your personal information and account settings.' : 'View student information and study progress.'}
+          </p>
         </div>
-        <SlideButton label="Study Mode" isActive={isStudyMode} onToggle={toggleStudyMode} />
+        {isOwnProfile && <SlideButton label="Study Mode" isActive={isStudyMode} onToggle={toggleStudyMode} />}
       </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
@@ -204,9 +162,11 @@ export default function Profile({ user }: ProfileProps) {
                 className="w-24 h-24 sm:w-32 sm:h-32 rounded-3xl object-cover border-4 border-white dark:border-slate-900 shadow-lg bg-white dark:bg-slate-800"
                 referrerPolicy="no-referrer"
               />
-              <button className="absolute inset-0 bg-black/40 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
-                <Camera className="w-6 h-6" />
-              </button>
+              {isOwnProfile && (
+                <button className="absolute inset-0 bg-black/40 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                  <Camera className="w-6 h-6" />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -265,7 +225,8 @@ export default function Profile({ user }: ProfileProps) {
                   type="text" 
                   value={profileData.displayName}
                   onChange={(e) => setProfileData({ ...profileData, displayName: e.target.value })}
-                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-900/30 transition-all outline-none text-slate-800 dark:text-slate-200"
+                  disabled={!isOwnProfile}
+                  className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-900/30 transition-all outline-none text-slate-800 dark:text-slate-200 ${!isOwnProfile ? 'cursor-default opacity-80' : ''}`}
                   placeholder="Enter your full name"
                   required
                 />
@@ -282,7 +243,7 @@ export default function Profile({ user }: ProfileProps) {
                   disabled
                   className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-500 dark:text-slate-500 cursor-not-allowed"
                 />
-                <p className="text-[10px] text-slate-400 dark:text-slate-500">Email cannot be changed as it is linked to your Google account.</p>
+                {isOwnProfile && <p className="text-[10px] text-slate-400 dark:text-slate-500">Email cannot be changed as it is linked to your Google account.</p>}
               </div>
 
               <div className="space-y-2">
@@ -294,24 +255,27 @@ export default function Profile({ user }: ProfileProps) {
                   type="text" 
                   value={profileData.ugNumber}
                   onChange={(e) => setProfileData({ ...profileData, ugNumber: e.target.value })}
-                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-900/30 transition-all outline-none text-slate-800 dark:text-slate-200"
+                  disabled={!isOwnProfile}
+                  className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-900/30 transition-all outline-none text-slate-800 dark:text-slate-200 ${!isOwnProfile ? 'cursor-default opacity-80' : ''}`}
                   placeholder="e.g. UG-2023-001"
                 />
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                  <Camera className="w-4 h-4" />
-                  Profile Picture URL
-                </label>
-                <input 
-                  type="url" 
-                  value={profileData.photoURL}
-                  onChange={(e) => setProfileData({ ...profileData, photoURL: e.target.value })}
-                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-900/30 transition-all outline-none text-slate-800 dark:text-slate-200"
-                  placeholder="https://example.com/photo.jpg"
-                />
-              </div>
+              {isOwnProfile && (
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                    <Camera className="w-4 h-4" />
+                    Profile Picture URL
+                  </label>
+                  <input 
+                    type="url" 
+                    value={profileData.photoURL}
+                    onChange={(e) => setProfileData({ ...profileData, photoURL: e.target.value })}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-900/30 transition-all outline-none text-slate-800 dark:text-slate-200"
+                    placeholder="https://example.com/photo.jpg"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -323,45 +287,48 @@ export default function Profile({ user }: ProfileProps) {
                 value={profileData.bio}
                 onChange={(e) => setProfileData({ ...profileData, bio: e.target.value })}
                 rows={4}
-                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-900/30 transition-all outline-none text-slate-800 dark:text-slate-200 resize-none"
-                placeholder="Tell us a little about yourself..."
+                disabled={!isOwnProfile}
+                className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-900/30 transition-all outline-none text-slate-800 dark:text-slate-200 resize-none ${!isOwnProfile ? 'cursor-default opacity-80' : ''}`}
+                placeholder={isOwnProfile ? "Tell us a little about yourself..." : "No bio provided."}
               />
             </div>
 
-            <div className="flex items-center justify-between pt-4">
-              <div className="flex-1 mr-4">
-                <AnimatePresence>
-                  {message && (
-                    <motion.div
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -20 }}
-                      className={`flex items-center gap-2 text-sm font-medium ${
-                        message.type === 'success' ? 'text-emerald-600' : 'text-red-600'
-                      }`}
-                    >
-                      {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-                      {message.text}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+            {isOwnProfile && (
+              <div className="flex items-center justify-between pt-4">
+                <div className="flex-1 mr-4">
+                  <AnimatePresence>
+                    {message && (
+                      <motion.div
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        className={`flex items-center gap-2 text-sm font-medium ${
+                          message.type === 'success' ? 'text-emerald-600' : 'text-red-600'
+                        }`}
+                      >
+                        {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                        {message.text}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
 
-              <button 
-                type="submit"
-                disabled={saving}
-                className={`flex items-center gap-2 px-8 py-3 rounded-2xl font-bold text-white transition-all active:scale-95 shadow-lg ${
-                  saving ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20'
-                }`}
-              >
-                {saving ? (
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                ) : (
-                  <Save className="w-5 h-5" />
-                )}
-                {saving ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
+                <button 
+                  type="submit"
+                  disabled={saving}
+                  className={`flex items-center gap-2 px-8 py-3 rounded-2xl font-bold text-white transition-all active:scale-95 shadow-lg ${
+                    saving ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20'
+                  }`}
+                >
+                  {saving ? (
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <Save className="w-5 h-5" />
+                  )}
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            )}
           </form>
         </div>
       </div>

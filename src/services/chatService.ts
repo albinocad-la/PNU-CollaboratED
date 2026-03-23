@@ -14,60 +14,9 @@ import {
   setDoc,
   getDoc
 } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { db, auth, handleFirestoreError, OperationType, isQuotaExceeded } from '../firebase';
 import { Chat, Message } from '../types';
 import imageCompression from 'browser-image-compression';
-
-export enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId: string | undefined;
-    email: string | null | undefined;
-    emailVerified: boolean | undefined;
-    isAnonymous: boolean | undefined;
-    tenantId: string | null | undefined;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
 
 export const subscribeToChats = (userId: string, callback: (chats: Chat[]) => void) => {
   const q = query(
@@ -140,6 +89,11 @@ export const sendMessage = async (
     messageData.replyTo = replyTo;
   }
 
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
   try {
     await addDoc(collection(db, 'chats', chatId, 'messages'), messageData);
     
@@ -171,6 +125,11 @@ export const getOrCreateDirectChat = async (user1Id: string, user1Name: string, 
 
     if (existingChat) {
       return existingChat.id;
+    }
+
+    // Check if quota was previously exceeded
+    if (isQuotaExceeded()) {
+      throw new Error('Firestore quota exceeded. Please try again later.');
     }
 
     // Create new direct chat
@@ -216,6 +175,9 @@ export const searchUsers = async (searchTerm: string, currentUserId: string) => 
 };
 
 export const initializeCourseChats = async (courses: any[]) => {
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) return;
+
   for (const course of courses) {
     try {
       const chatRef = doc(db, 'chats', course.id);
@@ -342,6 +304,11 @@ export const uploadFile = async (file: File): Promise<string> => {
 };
 
 export const joinChat = async (chatId: string, userId: string) => {
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
   try {
     const chatRef = doc(db, 'chats', chatId);
     const chatSnap = await getDoc(chatRef);
@@ -360,6 +327,11 @@ export const joinChat = async (chatId: string, userId: string) => {
 };
 
 export const createGroupChat = async (name: string, participants: { id: string, displayName: string, photoURL: string }[], creatorId: string, creatorName: string, creatorAvatar: string) => {
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
   try {
     const participantsInfo: { [userId: string]: { displayName: string, photoURL: string } } = {
       [creatorId]: { displayName: creatorName, photoURL: creatorAvatar || "" }
@@ -407,6 +379,11 @@ export const getUserProfiles = async (uids: string[]) => {
 };
 
 export const updateChatNickname = async (chatId: string, userId: string, nickname: string) => {
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
   try {
     const chatRef = doc(db, 'chats', chatId);
     await updateDoc(chatRef, {
@@ -418,6 +395,11 @@ export const updateChatNickname = async (chatId: string, userId: string, nicknam
 };
 
 export const updateChatAvatar = async (chatId: string, avatarUrl: string) => {
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
   try {
     const chatRef = doc(db, 'chats', chatId);
     await updateDoc(chatRef, {
@@ -429,6 +411,11 @@ export const updateChatAvatar = async (chatId: string, avatarUrl: string) => {
 };
 
 export const updateChatName = async (chatId: string, name: string) => {
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
   try {
     const chatRef = doc(db, 'chats', chatId);
     await updateDoc(chatRef, {
@@ -440,6 +427,11 @@ export const updateChatName = async (chatId: string, name: string) => {
 };
 
 export const deleteMessage = async (chatId: string, messageId: string) => {
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
   try {
     const messageRef = doc(db, 'chats', chatId, 'messages', messageId);
     await updateDoc(messageRef, {
@@ -454,6 +446,11 @@ export const deleteMessage = async (chatId: string, messageId: string) => {
 };
 
 export const leaveChat = async (chatId: string, userId: string) => {
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
   try {
     const chatRef = doc(db, 'chats', chatId);
     const chatSnap = await getDoc(chatRef);
@@ -481,6 +478,11 @@ export const leaveChat = async (chatId: string, userId: string) => {
 };
 
 export const hideChat = async (chatId: string, userId: string) => {
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
   try {
     const chatRef = doc(db, 'chats', chatId);
     const chatSnap = await getDoc(chatRef);

@@ -10,63 +10,14 @@ import {
   deleteDoc, 
   serverTimestamp, 
   orderBy,
-  getDoc
+  getDoc,
+  writeBatch,
+  increment
 } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { db, auth, handleFirestoreError, OperationType, isQuotaExceeded } from '../firebase';
 import { ReviewDeck, Flashcard } from '../types';
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 import mammoth from 'mammoth';
-
-export enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId: string | undefined;
-    email: string | null | undefined;
-    emailVerified: boolean | undefined;
-    isAnonymous: boolean | undefined;
-    tenantId: string | null | undefined;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
@@ -138,6 +89,12 @@ export const createDeck = async (userId: string, title: string, courseId: string
     lastReviewed: null,
     createdAt: serverTimestamp()
   };
+
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
   try {
     const docRef = await addDoc(collection(db, 'decks'), deckData);
     return docRef.id;
@@ -155,25 +112,68 @@ export const addFlashcard = async (deckId: string, front: string, back: string) 
     back,
     createdAt: serverTimestamp()
   };
+
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
   try {
     await addDoc(collection(db, 'decks', deckId, 'flashcards'), cardData);
     
-    // Update cardsCount in deck
+    // Update cardsCount in deck using increment for efficiency
     const deckRef = doc(db, 'decks', deckId);
-    const deckSnap = await getDoc(deckRef);
-    if (deckSnap.exists()) {
-      await updateDoc(deckRef, {
-        cardsCount: (deckSnap.data().cardsCount || 0) + 1
-      });
-    }
+    await updateDoc(deckRef, {
+      cardsCount: increment(1)
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
     throw error;
   }
 };
 
+export const addFlashcardsBatch = async (deckId: string, cards: { front: string, back: string }[]) => {
+  if (cards.length === 0) return;
+  
+  const batch = writeBatch(db);
+  const deckRef = doc(db, 'decks', deckId);
+  const flashcardsRef = collection(db, 'decks', deckId, 'flashcards');
+
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
+  cards.forEach(card => {
+    const cardRef = doc(flashcardsRef);
+    batch.set(cardRef, {
+      deckId,
+      front: card.front,
+      back: card.back,
+      createdAt: serverTimestamp()
+    });
+  });
+
+  batch.update(deckRef, {
+    cardsCount: increment(cards.length)
+  });
+
+  try {
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `decks/${deckId}/flashcards (batch)`);
+    throw error;
+  }
+};
+
 export const deleteDeck = async (deckId: string) => {
   const path = `decks/${deckId}`;
+
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) {
+    throw new Error('Firestore quota exceeded. Please try again later.');
+  }
+
   try {
     await deleteDoc(doc(db, 'decks', deckId));
   } catch (error) {
@@ -184,14 +184,21 @@ export const deleteDeck = async (deckId: string) => {
 
 export const generateFlashcardsFromContent = async (content: string) => {
   const response = await ai.models.generateContent({
-    model: "gemini-3.1-pro-preview",
-    contents: `Generate a list of flashcards (front and back) from the following study material. 
-    Focus on key concepts, definitions, and important facts.
-    Output only a JSON array of objects with "front" and "back" properties.
-    
-    Material:
-    ${content}`,
+    model: "gemini-3-flash-preview",
+    contents: {
+      parts: [
+        {
+          text: `Generate a list of flashcards (front and back) from the following study material. 
+          Focus on key concepts, definitions, and important facts.
+          Output only a JSON array of objects with "front" and "back" properties.
+          
+          Material:
+          ${content}`
+        }
+      ]
+    },
     config: {
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.ARRAY,
@@ -250,16 +257,19 @@ export const generateFlashcardsFromFile = async (file: File) => {
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
-      contents: [
-        contentPart,
-        {
-          text: `Generate a list of flashcards (front and back) from this document. 
-          Focus on key concepts, definitions, and important facts.
-          Output only a JSON array of objects with "front" and "back" properties.`
-        }
-      ],
+      model: "gemini-3-flash-preview",
+      contents: {
+        parts: [
+          contentPart,
+          {
+            text: `Generate a list of flashcards (front and back) from this document. 
+            Focus on key concepts, definitions, and important facts.
+            Output only a JSON array of objects with "front" and "back" properties.`
+          }
+        ]
+      },
       config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,

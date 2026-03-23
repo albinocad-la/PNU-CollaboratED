@@ -247,7 +247,7 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
   useEffect(() => {
     if (activeChatId) {
       updateGroupPresence(activeChatId);
-      const interval = setInterval(() => updateGroupPresence(activeChatId), 30000);
+      const interval = setInterval(() => updateGroupPresence(activeChatId), 60000);
       return () => clearInterval(interval);
     }
   }, [activeChatId]);

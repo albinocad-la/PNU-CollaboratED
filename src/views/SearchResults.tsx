@@ -154,7 +154,7 @@ export default function SearchResults({ onNavigate }: SearchResultsProps) {
                     <motion.div
                       key={user.uid}
                       whileHover={{ y: -2 }}
-                      onClick={() => onNavigate('community')}
+                      onClick={() => onNavigate('profile', user.uid)}
                       className="p-4 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all cursor-pointer group flex items-center gap-4"
                     >
                       <div className="w-10 h-10 rounded-full overflow-hidden shrink-0">

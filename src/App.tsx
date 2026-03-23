@@ -18,67 +18,16 @@ import Calendar from './views/Calendar';
 import Settings from './views/Settings';
 import Community from './views/Community';
 import SearchResults from './views/SearchResults';
-import { auth, db } from './firebase';
+import { auth, db, handleFirestoreError, OperationType, isQuotaExceeded } from './firebase';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { doc, onSnapshot, setDoc, serverTimestamp, getDocFromServer } from 'firebase/firestore';
 import { updateGlobalPresence } from './services/presenceService';
 import { useStudy } from './contexts/StudyContext';
 import { useTheme } from './contexts/ThemeContext';
 import { motion, AnimatePresence } from 'motion/react';
-import { Brain, Focus } from 'lucide-react';
+import { Brain, Focus, AlertCircle } from 'lucide-react';
 
 // Removed local UserProfile interface as it is now in types.ts
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string;
-    email?: string | null;
-    emailVerified?: boolean;
-    isAnonymous?: boolean;
-    tenantId?: string | null;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null, user: User | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: user?.uid,
-      email: user?.email,
-      emailVerified: user?.emailVerified,
-      isAnonymous: user?.isAnonymous,
-      tenantId: user?.tenantId,
-      providerInfo: user?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
-    },
-    operationType,
-    path
-  }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
 
 export default function App() {
   const { isFocusMode, isStudyMode, toggleFocusMode } = useStudy();
@@ -91,21 +40,33 @@ export default function App() {
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [selectedChatId, setSelectedChatId] = useState<string | undefined>(undefined);
   const [selectedDeckId, setSelectedDeckId] = useState<string | undefined>(undefined);
+  const [selectedProfileId, setSelectedProfileId] = useState<string | undefined>(undefined);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
 
   useEffect(() => {
-    if (user) {
+    // Clear quota flag on mount to allow retries in new sessions
+    localStorage.removeItem('firestore_quota_exceeded');
+    
+    // Listen for custom events or check for errors in services
+    const handleQuotaError = () => setQuotaExceeded(true);
+    window.addEventListener('firestore-quota-exceeded', handleQuotaError);
+    return () => window.removeEventListener('firestore-quota-exceeded', handleQuotaError);
+  }, []);
+
+  useEffect(() => {
+    if (user && profile) {
       // Initial update
       updateGlobalPresence();
       
-      // Heartbeat every 30 seconds
+      // Heartbeat every 60 seconds
       const interval = setInterval(() => {
         updateGlobalPresence();
-      }, 30000);
+      }, 60000);
       
       return () => clearInterval(interval);
     }
-  }, [user]);
+  }, [user, profile]);
 
   useEffect(() => {
     let unsubscribeProfile: (() => void) | undefined;
@@ -141,13 +102,20 @@ export default function App() {
               email: user.email || '',
               updatedAt: serverTimestamp()
             };
+
+            // Check if quota was previously exceeded
+            if (isQuotaExceeded()) {
+              setProfile(newProfile as any);
+              return;
+            }
+
             try {
               await setDoc(userRef, newProfile);
               setProfile(newProfile as any);
             } catch (e) {
               console.error("Error creating profile:", e);
               try {
-                handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}`, user);
+                handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}`);
               } catch (err) {
                 // Fallback to auth data
                 setProfile({
@@ -161,7 +129,7 @@ export default function App() {
         }, (error) => {
           console.error("Error listening to profile:", error);
           try {
-            handleFirestoreError(error, OperationType.GET, `users/${user.uid}`, user);
+            handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
           } catch (e) {
             // Silent error after logging
           }
@@ -214,6 +182,12 @@ export default function App() {
     setCurrentView('decks');
   };
 
+  const handleProfileClick = (userId: string) => {
+    setViewHistory(prev => [...prev, { view: currentView, id: selectedProfileId }]);
+    setSelectedProfileId(userId);
+    setCurrentView('profile');
+  };
+
   const renderView = () => {
     switch (currentView) {
       case 'dashboard': return <Dashboard key="dashboard" user={user!} profile={profile} onCourseClick={handleCourseClick} onChatClick={handleChatClick} onViewAllCourses={() => handleNavigate('courses')} onViewCalendar={() => handleNavigate('calendar')} onNavigate={handleNavigate} />;
@@ -222,9 +196,9 @@ export default function App() {
       case 'decks': return <ReviewDecks key="decks" user={user!} initialDeckId={selectedDeckId} />;
       case 'course-detail': return <CourseDetail key="course-detail" courseId={selectedCourseId} onBack={handleBack} onChatClick={handleChatClick} onReviewClick={handleReviewClick} />;
       case 'calendar': return <Calendar key="calendar" />;
-      case 'profile': return <Profile key="profile" user={user!} />;
+      case 'profile': return <Profile key="profile" user={user!} targetUserId={selectedProfileId} />;
       case 'settings': return <Settings key="settings" user={user!} profile={profile} onLogout={handleLogout} />;
-      case 'community': return <Community key="community" currentUser={profile as UserProfile} />;
+      case 'community': return <Community key="community" currentUser={profile as UserProfile} onNavigate={handleNavigate} />;
       case 'search': return <SearchResults key="search" onNavigate={(view: View, id?: string) => {
         if (view === 'course-detail' && id) {
           handleCourseClick(id);
@@ -232,6 +206,8 @@ export default function App() {
           handleChatClick(id);
         } else if (view === 'decks' && id) {
           handleReviewClick(id);
+        } else if (view === 'profile' && id) {
+          handleProfileClick(id);
         } else {
           handleNavigate(view);
         }
@@ -240,10 +216,16 @@ export default function App() {
     }
   };
 
-  const handleNavigate = (view: View) => {
-    if (view !== currentView) {
-      setViewHistory(prev => [...prev, { view: currentView, id: selectedCourseId || undefined }]);
+  const handleNavigate = (view: View, id?: string) => {
+    if (view !== currentView || id !== selectedProfileId) {
+      setViewHistory(prev => [...prev, { view: currentView, id: selectedCourseId || selectedProfileId || undefined }]);
       setCurrentView(view);
+      if (view === 'profile' && id) {
+        setSelectedProfileId(id);
+      } else if (view !== 'profile') {
+        setSelectedProfileId(undefined);
+      }
+      
       if (view !== 'messages') {
         setSelectedChatId(undefined);
       }
@@ -305,6 +287,36 @@ export default function App() {
               background: 'radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.05) 0%, transparent 70%)'
             }}
           />
+        )}
+      </AnimatePresence>
+
+      {/* Quota Exceeded Alert */}
+      <AnimatePresence>
+        {quotaExceeded && (
+          <motion.div
+            initial={{ opacity: 0, y: -50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -50 }}
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-md"
+          >
+            <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 p-4 rounded-2xl shadow-xl flex items-start gap-3">
+              <div className="bg-amber-100 dark:bg-amber-800 p-2 rounded-xl text-amber-600 dark:text-amber-400">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-amber-900 dark:text-amber-100 mb-1">Firestore Quota Exceeded</h3>
+                <p className="text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
+                  Your daily free tier write limit has been reached. Some features may be unavailable until the quota resets tomorrow.
+                </p>
+                <button 
+                  onClick={() => setQuotaExceeded(false)}
+                  className="mt-3 text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
