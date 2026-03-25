@@ -4,7 +4,7 @@ export interface UserProfile {
   uid: string;
   displayName: string;
   displayNameLowercase?: string;
-  email: string;
+  email?: string;
   photoURL?: string;
   ugNumber?: string;
   bio?: string;

@@ -119,9 +119,9 @@ export default function CourseDetail({ courseId, onBack, onChatClick, onReviewCl
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check file size (limit to 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      setError('File is too large. Please upload files smaller than 10MB.');
+    // Check file size (PDF limit to 750KB)
+    if (file.type === 'application/pdf' && file.size > 750 * 1024) {
+      setError('PDF file size exceeds 750KB limit.');
       return;
     }
 
@@ -562,7 +562,7 @@ export default function CourseDetail({ courseId, onBack, onChatClick, onReviewCl
                       className="p-8 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all"
                     >
                       <Plus className="w-8 h-8 text-slate-300" />
-                      <p className="text-sm font-medium text-slate-500">Click to select a file (Max 10MB)</p>
+                      <p className="text-sm font-medium text-slate-500">Click to select a file (PDF max 750KB)</p>
                     </div>
                   )}
                 </div>

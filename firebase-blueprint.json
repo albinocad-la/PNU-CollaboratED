@@ -2,7 +2,7 @@
   "entities": {
     "UserProfile": {
       "title": "User Profile",
-      "description": "Stores additional user information like UG number and custom profile details.",
+      "description": "Stores public user information like UG number and custom profile details.",
       "type": "object",
       "properties": {
         "uid": {
@@ -12,10 +12,6 @@
         "displayName": {
           "type": "string",
           "description": "The user's display name."
-        },
-        "email": {
-          "type": "string",
-          "description": "The user's email address."
         },
         "photoURL": {
           "type": "string",
@@ -40,7 +36,24 @@
           "description": "The last time the profile was updated."
         }
       },
-      "required": ["uid", "displayName", "email"]
+      "required": ["uid", "displayName"]
+    },
+    "UserPrivateData": {
+      "title": "User Private Data",
+      "description": "Stores sensitive user information like email.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "description": "The user's email address."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The last time the private data was updated."
+        }
+      },
+      "required": ["email"]
     },
     "Todo": {
       "title": "To-do Item",
@@ -215,7 +228,11 @@
   "firestore": {
     "/users/{userId}": {
       "schema": "UserProfile",
-      "description": "Collection of user profiles."
+      "description": "Public user profile information."
+    },
+    "/users/{userId}/private/data": {
+      "schema": "UserPrivateData",
+      "description": "Private user information like email."
     },
     "/users/{userId}/friends/{friendId}": {
       "schema": "Friend",

@@ -89,51 +89,73 @@ export default function App() {
 
         // Listen to profile changes in Firestore
         const userRef = doc(db, 'users', user.uid);
-        unsubscribeProfile = onSnapshot(userRef, async (snapshot) => {
+        const privateRef = doc(db, 'users', user.uid, 'private', 'data');
+
+        let publicProfile: any = null;
+        let privateProfile: any = null;
+
+        const updateCombinedProfile = () => {
+          if (publicProfile) {
+            setProfile({
+              ...publicProfile,
+              email: privateProfile?.email || user.email || ''
+            });
+          }
+        };
+
+        unsubscribeProfile = onSnapshot(userRef, (snapshot) => {
           if (snapshot.exists()) {
-            setProfile(snapshot.data() as UserProfile);
+            publicProfile = snapshot.data();
+            updateCombinedProfile();
           } else {
-            // Create profile if it doesn't exist (ensures Google account is registered)
+            // Create profile if it doesn't exist
             const newProfile = {
               uid: user.uid,
               displayName: user.displayName || '',
               displayNameLowercase: (user.displayName || '').toLowerCase(),
               photoURL: user.photoURL || '',
+              updatedAt: serverTimestamp()
+            };
+
+            const privateData = {
               email: user.email || '',
               updatedAt: serverTimestamp()
             };
 
-            // Check if quota was previously exceeded
             if (isQuotaExceeded()) {
-              setProfile(newProfile as any);
+              setProfile({ ...newProfile, email: user.email || '' } as any);
               return;
             }
 
-            try {
-              await setDoc(userRef, newProfile);
-              setProfile(newProfile as any);
-            } catch (e) {
+            Promise.all([
+              setDoc(userRef, newProfile),
+              setDoc(privateRef, privateData)
+            ]).catch(e => {
               console.error("Error creating profile:", e);
-              try {
-                handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}`);
-              } catch (err) {
-                // Fallback to auth data
-                setProfile({
-                  displayName: user.displayName || '',
-                  photoURL: user.photoURL || '',
-                  email: user.email || '',
-                });
-              }
-            }
+              handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}`);
+            });
           }
         }, (error) => {
           console.error("Error listening to profile:", error);
-          try {
-            handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
-          } catch (e) {
-            // Silent error after logging
-          }
+          handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
         });
+
+        const unsubscribePrivate = onSnapshot(privateRef, (snapshot) => {
+          if (snapshot.exists()) {
+            privateProfile = snapshot.data();
+            updateCombinedProfile();
+          }
+        }, (error) => {
+          console.error("Error listening to private profile:", error);
+          // Don't throw here to avoid breaking the app if private data is missing
+        });
+
+        // Add to cleanup
+        const originalUnsubscribeProfile = unsubscribeProfile;
+        unsubscribeProfile = () => {
+          originalUnsubscribeProfile();
+          unsubscribePrivate();
+        };
       } else {
         setProfile(null);
         if (unsubscribeProfile) unsubscribeProfile();

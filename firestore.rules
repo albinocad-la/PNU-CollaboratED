@@ -1,28 +1,6 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: users
-    // Document ID: {userId} (matches request.auth.uid)
-    // Fields:
-    //   - uid: string (required) - The unique identifier for the user.
-    //   - displayName: string (required, < 100 chars) - The user's display name.
-    //   - email: string (required, < 200 chars) - The user's email address (PII).
-    //   - photoURL: string (optional, < 1000 chars) - The user's profile picture URL.
-    //   - ugNumber: string (optional, < 20 chars) - The user's Undergraduate (UG) number.
-    //   - bio: string (optional, < 500 chars) - A short biography about the user.
-    //   - role: string (optional, enum: ['admin', 'user']) - User role.
-    //   - updatedAt: timestamp (optional) - The last time the profile was updated.
-    //
-    // ===============================================================
-
-    // ===============================================================
-    // Helper Functions
-    // ===============================================================
-    
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -33,9 +11,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() &&
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'admin' ||
-          (request.auth.token.email == "loveyouaudley@gmail.com" && request.auth.token.email_verified == true));
+        (request.auth.token.email == "loveyouaudley@gmail.com" && request.auth.token.email_verified == true);
     }
 
     function isValidEmail(email) {
@@ -50,28 +26,18 @@ service cloud.firestore {
         (url == "" || url.matches("^https://.*") || url.matches("^http://.*") || url.matches("^data:.*"));
     }
 
-    function hasOnlyAllowedFields(allowedFields) {
-      return request.resource.data.keys().hasOnly(allowedFields);
-    }
-
-    function isRecent(timestamp) {
-      return timestamp is timestamp && 
-             timestamp > request.time - duration.value(5, 'm') &&
-             timestamp < request.time + duration.value(5, 'm');
-    }
-
-    // ===============================================================
-    // Domain Validators
-    // ===============================================================
-
     function isValidUserProfile(data) {
       return data.uid == request.auth.uid &&
              data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100 &&
-             isValidEmail(data.email) &&
              (!('photoURL' in data) || isValidUrl(data.photoURL)) &&
              (!('ugNumber' in data) || (data.ugNumber is string && data.ugNumber.size() < 20)) &&
              (!('bio' in data) || (data.bio is string && data.bio.size() < 500)) &&
              (!('role' in data) || data.role in ['admin', 'user']) &&
+             (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidPrivateData(data) {
+      return isValidEmail(data.email) &&
              (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
@@ -137,14 +103,6 @@ service cloud.firestore {
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
-    function isValidSocialRelation(data) {
-      return data.keys().hasAll(['uid', 'displayName', 'createdAt']) &&
-             data.uid is string &&
-             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100 &&
-             (!('photoURL' in data) || isValidUrl(data.photoURL)) &&
-             data.createdAt is timestamp;
-    }
-
     function isValidTodo(data) {
       return data.keys().hasAll(['userId', 'date', 'text', 'completed']) &&
              data.userId == request.auth.uid &&
@@ -154,39 +112,42 @@ service cloud.firestore {
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
-    // ===============================================================
-    // Rules
-    // ===============================================================
+    function isValidSocialRelation(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'createdAt']) &&
+             data.uid is string &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100 &&
+             (!('photoURL' in data) || isValidUrl(data.photoURL)) &&
+             data.createdAt is timestamp;
+    }
 
     match /users/{userId} {
-      // PII Protection: Only owner or admin can read the full profile (contains email)
-      // Note: This will break public search if email is not moved to a private doc.
-      allow read: if isOwner(userId) || isAdmin();
-      
+      allow read: if isAuthenticated();
       allow create: if isOwner(userId) && isValidUserProfile(request.resource.data) && 
-                      (request.resource.data.get('role', 'user') == 'user' || isAdmin());
-      
+                      (!('role' in request.resource.data) || request.resource.data.role == 'user' || isAdmin());
       allow update: if isOwner(userId) && isValidUserProfile(request.resource.data) && 
                       request.resource.data.uid == resource.data.uid &&
-                      (request.resource.data.get('role', 'user') == resource.data.get('role', 'user') || isAdmin());
+                      (!('role' in request.resource.data) || request.resource.data.role == resource.data.role || isAdmin());
+
+      match /private/{docId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidPrivateData(request.resource.data);
+      }
 
       match /friends/{friendId} {
-        allow read: if isOwner(userId) || isAdmin();
-        // Allow mutual friendship creation: user can add themselves to another's list
+        allow read: if isAuthenticated();
         allow create: if (isOwner(userId) && isValidSocialRelation(request.resource.data)) || 
                         (isOwner(friendId) && request.resource.data.uid == request.auth.uid && isValidSocialRelation(request.resource.data));
         allow delete: if isOwner(userId) || isOwner(friendId);
       }
 
       match /following/{followedId} {
-        allow read: if isOwner(userId) || isAdmin();
+        allow read: if isAuthenticated();
         allow create: if isOwner(userId) && isValidSocialRelation(request.resource.data);
         allow delete: if isOwner(userId);
       }
 
       match /followers/{followerId} {
-        allow read: if isOwner(userId) || isAdmin();
-        // Allow someone to follow: they add themselves to the owner's followers list
+        allow read: if isAuthenticated();
         allow create: if (isOwner(userId) && isValidSocialRelation(request.resource.data)) || 
                         (isOwner(followerId) && request.resource.data.uid == request.auth.uid && isValidSocialRelation(request.resource.data));
         allow delete: if isOwner(userId) || isOwner(followerId);
@@ -271,21 +232,8 @@ service cloud.firestore {
       }
     }
 
-    // Default deny
-    match /{path=**} {
+    match /{document=**} {
       allow read, write: if false;
     }
-
-    // ===============================================================
-    // Devil's Advocate Attack Audit
-    // ===============================================================
-    // 1. Public List Exploit: BLOCKED. Default deny and isAuthenticated() checks prevent public access.
-    // 2. Unauthorized Read/Write: BLOCKED. Ownership checks (isOwner) and participant checks are enforced.
-    // 3. The "Update Bypass": BLOCKED. All update rules call domain validators (e.g., isValidUserProfile).
-    // 4. Ownership Hijacking: BLOCKED. Immutable field checks (e.g., userIdUnchanged) prevent changing owners.
-    // 5. Resource Exhaustion: BLOCKED. Every string field has a .size() limit (e.g., displayName < 100).
-    // 6. Privilege Escalation: BLOCKED. roleUnchanged() and isAdmin() checks prevent self-promotion.
-    // 7. PII Exposure: BLOCKED. users collection read is restricted to owner or admin.
-    // ===============================================================
   }
 }

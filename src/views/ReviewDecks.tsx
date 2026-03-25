@@ -106,8 +106,9 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 10 * 1024 * 1024) {
-        alert("File size exceeds 10MB limit.");
+      // Limit PDF files to 750KB as requested
+      if (file.type === 'application/pdf' && file.size > 750 * 1024) {
+        alert("PDF file size exceeds 750KB limit.");
         return;
       }
       setUploadFile(file);
@@ -477,7 +478,7 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
                           <Upload className="w-6 h-6" />
                         </div>
                         <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Click to upload study material</p>
-                        <p className="text-xs text-slate-400 dark:text-slate-500">PDF, DOC, TXT up to 10MB</p>
+                        <p className="text-xs text-slate-400 dark:text-slate-500">PDF (max 750KB), DOC, TXT</p>
                       </div>
                     )}
                   </div>

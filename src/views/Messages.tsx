@@ -403,9 +403,9 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
     const file = e.target.files?.[0];
     if (!file || !activeChatId) return;
 
-    // Limit to 10MB as requested
-    if (file.size > 10 * 1024 * 1024) {
-      alert('File size exceeds 10MB limit.');
+    // Limit PDF files to 750KB as requested
+    if (file.type === 'application/pdf' && file.size > 750 * 1024) {
+      alert('PDF file size exceeds 750KB limit.');
       return;
     }
 
@@ -971,12 +971,14 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
                     <button 
                       onClick={() => fileInputRef.current?.click()}
                       className="p-2 hover:bg-indigo-50 rounded-full transition-colors"
+                      title="Upload File (PDF max 750KB)"
                     >
                       <Paperclip className="w-5 h-5" />
                     </button>
                     <button 
                       onClick={() => imageInputRef.current?.click()}
                       className="p-2 hover:bg-indigo-50 rounded-full transition-colors"
+                      title="Upload Image"
                     >
                       <ImageIcon className="w-5 h-5" />
                     </button>

@@ -38,25 +38,30 @@ export default function Profile({ user, targetUserId }: ProfileProps) {
 
     const unsubFriends = onSnapshot(collection(db, 'users', effectiveUserId, 'friends'), (snap) => {
       setSocialStats(prev => ({ ...prev, friends: snap.size }));
-    });
+    }, (error) => console.error("Error listening to friends:", error));
+
     const unsubFollowing = onSnapshot(collection(db, 'users', effectiveUserId, 'following'), (snap) => {
       setSocialStats(prev => ({ ...prev, following: snap.size }));
-    });
+    }, (error) => console.error("Error listening to following:", error));
+
     const unsubFollowers = onSnapshot(collection(db, 'users', effectiveUserId, 'followers'), (snap) => {
       setSocialStats(prev => ({ ...prev, followers: snap.size }));
-    });
+    }, (error) => console.error("Error listening to followers:", error));
 
-    const sessionsRef = collection(db, 'users', effectiveUserId, 'sessions');
-    const unsubSessions = onSnapshot(sessionsRef, (snap) => {
-      let totalMinutes = 0;
-      let totalCards = 0;
-      snap.forEach(doc => {
-        const data = doc.data();
-        totalMinutes += data.durationMinutes || 0;
-        totalCards += data.cardsReviewed || 0;
-      });
-      setStudyStats({ studyTime: totalMinutes, cardsReviewed: totalCards });
-    });
+    let unsubSessions = () => {};
+    if (isOwnProfile) {
+      const sessionsRef = collection(db, 'users', effectiveUserId, 'sessions');
+      unsubSessions = onSnapshot(sessionsRef, (snap) => {
+        let totalMinutes = 0;
+        let totalCards = 0;
+        snap.forEach(doc => {
+          const data = doc.data();
+          totalMinutes += data.durationMinutes || 0;
+          totalCards += data.cardsReviewed || 0;
+        });
+        setStudyStats({ studyTime: totalMinutes, cardsReviewed: totalCards });
+      }, (error) => console.error("Error listening to sessions:", error));
+    }
 
     return () => {
       unsubFriends();
@@ -72,19 +77,30 @@ export default function Profile({ user, targetUserId }: ProfileProps) {
         const docRef = doc(db, 'users', effectiveUserId);
         const docSnap = await getDoc(docRef);
         
+        let profile = {} as UserProfileData;
         if (docSnap.exists()) {
-          setProfileData(docSnap.data() as UserProfileData);
+          profile = docSnap.data() as UserProfileData;
         } else if (isOwnProfile) {
           // If no profile exists and it's own profile, pre-fill with auth data
-          setProfileData({
+          profile = {
             uid: user.uid,
             displayName: user.displayName || '',
-            email: user.email || '',
             photoURL: user.photoURL || '',
             ugNumber: '',
             bio: '',
-          });
+          };
         }
+
+        if (isOwnProfile) {
+          const privateSnap = await getDoc(doc(db, 'users', user.uid, 'private', 'data'));
+          if (privateSnap.exists()) {
+            profile.email = privateSnap.data().email;
+          } else {
+            profile.email = user.email || '';
+          }
+        }
+
+        setProfileData(profile);
       } catch (error) {
         console.error('Error fetching profile:', error);
       } finally {
@@ -110,11 +126,21 @@ export default function Profile({ user, targetUserId }: ProfileProps) {
 
     try {
       const docRef = doc(db, 'users', user.uid);
-      await setDoc(docRef, {
-        ...profileData,
-        displayNameLowercase: profileData.displayName.toLowerCase(),
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
+      const privateRef = doc(db, 'users', user.uid, 'private', 'data');
+      
+      const { email, ...publicData } = profileData;
+
+      await Promise.all([
+        setDoc(docRef, {
+          ...publicData,
+          displayNameLowercase: profileData.displayName.toLowerCase(),
+          updatedAt: serverTimestamp(),
+        }, { merge: true }),
+        setDoc(privateRef, {
+          email: email || user.email || '',
+          updatedAt: serverTimestamp(),
+        }, { merge: true })
+      ]);
       
       setMessage({ type: 'success', text: 'Profile updated successfully!' });
       setTimeout(() => setMessage(null), 3000);
