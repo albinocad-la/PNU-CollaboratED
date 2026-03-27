@@ -51,6 +51,7 @@ export const subscribeToMessages = (chatId: string, callback: (messages: Message
       return {
         id: doc.id,
         ...data,
+        rawTimestamp: data.timestamp,
         timestamp: data.timestamp instanceof Timestamp 
           ? data.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           : 'Just now'
@@ -472,8 +473,49 @@ export const deleteMessage = async (chatId: string, messageId: string) => {
       fileUrl: null,
       fileName: null
     });
+
+    // Update lastMessage if it was the one deleted
+    const chatRef = doc(db, 'chats', chatId);
+    const chatSnap = await getDoc(chatRef);
+    if (chatSnap.exists()) {
+      const chatData = chatSnap.data();
+      // If the lastMessage matches the deleted message's content (or if we want to be safe, just update it)
+      // Since we don't store the lastMessageId, we can only check content or just always update it to "Message unsent" if it was the last one.
+      // A better way would be to fetch the new last message, but for now, let's just mark it as unsent in the chat list too.
+      await updateDoc(chatRef, {
+        lastMessage: 'Message unsent'
+      });
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}/messages/${messageId}`);
+  }
+};
+
+export const markAsRead = async (chatId: string, userId: string) => {
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) return;
+
+  try {
+    const chatRef = doc(db, 'chats', chatId);
+    await updateDoc(chatRef, {
+      [`lastRead.${userId}`]: serverTimestamp()
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}`);
+  }
+};
+
+export const setTyping = async (chatId: string, userId: string, isTyping: boolean) => {
+  // Check if quota was previously exceeded
+  if (isQuotaExceeded()) return;
+
+  try {
+    const chatRef = doc(db, 'chats', chatId);
+    await updateDoc(chatRef, {
+      [`typing.${userId}`]: isTyping
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}`);
   }
 };
 

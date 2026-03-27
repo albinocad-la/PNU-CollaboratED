@@ -63,6 +63,8 @@ service cloud.firestore {
              (!('participantsInfo' in data) || (data.participantsInfo is map && data.participantsInfo.size() <= 10000)) &&
              (!('avatar' in data) || isValidUrl(data.avatar)) &&
              (!('deletedBy' in data) || (data.deletedBy is list && data.deletedBy.size() <= 10000)) &&
+             (!('lastRead' in data) || (data.lastRead is map && data.lastRead.size() <= 10000)) &&
+             (!('typing' in data) || (data.typing is map && data.typing.size() <= 10000)) &&
              (!('name' in data) || (data.name is string && data.name.size() >= 0 && data.name.size() < 100)) &&
              (!('lastMessage' in data) || (data.lastMessage is string && data.lastMessage.size() < 10000)) &&
              (!('lastActive' in data) || (data.lastActive is timestamp || data.lastActive == null)) &&

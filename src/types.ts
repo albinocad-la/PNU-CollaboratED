@@ -53,6 +53,7 @@ export interface Message {
   senderAvatar: string;
   content: string;
   timestamp: string;
+  rawTimestamp?: any;
   isMe?: boolean;
   type?: 'text' | 'image' | 'file';
   fileUrl?: string;
@@ -84,6 +85,8 @@ export interface Chat {
   color?: string;
   nicknames?: { [userId: string]: string };
   deletedBy?: string[];
+  lastRead?: { [userId: string]: any };
+  typing?: { [userId: string]: boolean };
 }
 
 export interface ReviewDeck {

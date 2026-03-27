@@ -7,7 +7,7 @@ import EmojiPicker, { Theme } from 'emoji-picker-react';
 import SlideButton from '../components/SlideButton';
 import { useStudy } from '../contexts/StudyContext';
 import { updateGroupPresence, useGroupOnlineStatus } from '../services/presenceService';
-import { subscribeToChats, subscribeToMessages, sendMessage, getOrCreateDirectChat, searchUsers, initializeCourseChats, getAllCourseChats, joinChat, createGroupChat, getUserProfiles, updateChatNickname, updateChatAvatar, updateChatName, leaveChat, uploadFile, hideChat } from '../services/chatService';
+import { subscribeToChats, subscribeToMessages, sendMessage, getOrCreateDirectChat, searchUsers, initializeCourseChats, getAllCourseChats, joinChat, createGroupChat, getUserProfiles, updateChatNickname, updateChatAvatar, updateChatName, leaveChat, uploadFile, hideChat, deleteMessage, markAsRead, setTyping } from '../services/chatService';
 import { courses } from '../data';
 
 interface MessagesProps {
@@ -48,7 +48,15 @@ function ChatListItem({ chat, isActive, onClick, userId }: ChatListItemProps) {
       chatAvatar = chat.participantsInfo[otherId].photoURL;
     }
   }
+
+  const lastActiveDate = chat.lastActive && (typeof chat.lastActive === 'string' ? null : (chat.lastActive as any).toDate());
+  const lastReadDate = chat.lastRead?.[userId] && (chat.lastRead[userId] as any).toDate();
+  const isUnread = lastActiveDate && (!lastReadDate || lastReadDate < lastActiveDate);
   
+  const typingUsers = chat.typing ? Object.entries(chat.typing)
+    .filter(([id, isTyping]) => isTyping && id !== userId)
+    .map(([id]) => chat.participantsInfo?.[id]?.displayName || 'Someone') : [];
+
   return (
     <div 
       onClick={onClick}
@@ -76,16 +84,31 @@ function ChatListItem({ chat, isActive, onClick, userId }: ChatListItemProps) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex justify-between items-baseline mb-0.5">
-            <h4 className={`font-bold truncate text-sm sm:text-base ${isActive ? 'text-indigo-900 dark:text-indigo-100' : 'text-slate-800 dark:text-slate-200'}`}>
+            <h4 className={`font-bold truncate text-sm sm:text-base ${isActive ? 'text-indigo-900 dark:text-indigo-100' : isUnread ? 'text-slate-900 dark:text-white' : 'text-slate-800 dark:text-slate-200'}`}>
               {chatName}
             </h4>
-            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium shrink-0 ml-2">
+            <span className={`text-[10px] font-medium shrink-0 ml-2 ${isUnread ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500'}`}>
               {chat.lastActive ? (typeof chat.lastActive === 'string' ? chat.lastActive : 'Just now') : ''}
             </span>
           </div>
-          <p className={`text-xs truncate ${isActive ? 'text-indigo-600 dark:text-indigo-400 font-medium' : 'text-slate-500 dark:text-slate-400'}`}>
-            {chat.lastMessage || (chat.type === 'course' ? 'Course Group' : 'Direct Message')}
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className={`text-xs truncate flex-1 ${isUnread ? 'text-slate-900 dark:text-white font-bold' : isActive ? 'text-indigo-600 dark:text-indigo-400 font-medium' : 'text-slate-500 dark:text-slate-400'}`}>
+              {typingUsers.length > 0 ? (
+                <span className="text-indigo-600 dark:text-indigo-400 animate-pulse font-bold">
+                  {typingUsers.length === 1 ? `${typingUsers[0]} is typing...` : `${typingUsers.length} people typing...`}
+                </span>
+              ) : (
+                chat.lastMessage === 'Message unsent' ? (
+                  <span className="italic text-slate-400 dark:text-slate-500">Message unsent</span>
+                ) : (
+                  chat.lastMessage || (chat.type === 'course' ? 'Course Group' : 'Direct Message')
+                )
+              )}
+            </p>
+            {isUnread && (
+              <div className="w-2 h-2 bg-indigo-600 rounded-full shrink-0"></div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -107,6 +130,10 @@ function ChatHeader({ chat, onBack, onInfo, userId }: { chat: Chat, onBack?: () 
     }
   }
   
+  const typingUsers = chat.typing ? Object.entries(chat.typing)
+    .filter(([id, isTyping]) => isTyping && id !== userId)
+    .map(([id]) => chat.participantsInfo?.[id]?.displayName || 'Someone') : [];
+
   return (
     <div className="h-16 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 sm:px-6 bg-white dark:bg-slate-900 shrink-0 z-10">
       <div className="flex items-center gap-2 sm:gap-3">
@@ -134,7 +161,11 @@ function ChatHeader({ chat, onBack, onInfo, userId }: { chat: Chat, onBack?: () 
         <div>
           <h3 className="font-bold text-slate-800 dark:text-white text-sm sm:text-base leading-tight">{chatName}</h3>
           <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
-            {isOnline ? (
+            {typingUsers.length > 0 ? (
+              <span className="text-indigo-600 dark:text-indigo-400 font-bold animate-pulse">
+                {typingUsers.length === 1 ? `${typingUsers[0]} is typing...` : `${typingUsers.length} people are typing...`}
+              </span>
+            ) : isOnline ? (
               <>
                 <span className="text-emerald-600 dark:text-emerald-400 font-bold">Active now</span>
                 {chat.type === 'course' && <span className="text-slate-300 dark:text-slate-600">•</span>}
@@ -186,6 +217,7 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
   const [selectedParticipants, setSelectedParticipants] = useState<any[]>([]);
   const [availableGroups, setAvailableGroups] = useState<Chat[]>([]);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -248,9 +280,22 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
         ...m,
         isMe: m.senderId === user.uid
       })));
+      
+      // Mark as read when new messages arrive and chat is active
+      markAsRead(activeChatId, user.uid);
     });
 
-    return () => unsubscribe();
+    // Mark as read when chat is opened
+    markAsRead(activeChatId, user.uid);
+
+    return () => {
+      unsubscribe();
+      // Clear typing status on unmount or chat change
+      if (activeChatId) {
+        setTyping(activeChatId, user.uid, false);
+      }
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
   }, [activeChatId, user.uid]);
 
   // Presence tracking
@@ -336,6 +381,12 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
       setShowEmojiPicker(false);
       setReplyingTo(null);
       setShowMentionList(false);
+      
+      // Clear typing status
+      if (activeChatId) {
+        setTyping(activeChatId, user.uid, false);
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      }
     } catch (error) {
       console.error('Error sending message:', error);
     }
@@ -359,6 +410,18 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setInput(value);
+
+    // Handle typing status
+    if (activeChatId) {
+      if (!activeChat?.typing?.[user.uid]) {
+        setTyping(activeChatId, user.uid, true);
+      }
+      
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        setTyping(activeChatId, user.uid, false);
+      }, 3000);
+    }
 
     // Mention detection
     const cursorPosition = e.target.selectionStart;
@@ -762,7 +825,11 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
                           )}
 
                           <div className="relative group/actions">
-                            {msg.type === 'image' ? (
+                            {msg.isDeleted ? (
+                              <div className="px-4 py-2 rounded-2xl text-sm bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 italic border border-slate-100 dark:border-slate-700">
+                                Message unsent
+                              </div>
+                            ) : msg.type === 'image' ? (
                               <div className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm">
                                 <img src={msg.fileUrl} alt="Sent image" className="max-w-full h-auto max-h-64 object-cover" referrerPolicy="no-referrer" />
                               </div>
@@ -787,11 +854,9 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
                               </a>
                             ) : (
                               <div className={`px-4 py-2 rounded-2xl text-sm ${
-                                msg.isDeleted 
-                                  ? 'bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 italic border border-slate-100 dark:border-slate-700' 
-                                  : msg.isMe 
-                                    ? 'bg-indigo-600 text-white rounded-tr-md shadow-sm' 
-                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-md shadow-sm'
+                                msg.isMe 
+                                  ? 'bg-indigo-600 text-white rounded-tr-md shadow-sm' 
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-md shadow-sm'
                               }`}>
                                 {msg.content.split(/(@\w+(?:\s\w+)*)/g).map((part, i) => {
                                   if (part.startsWith('@')) {
@@ -831,7 +896,29 @@ export default function Messages({ user, profile, initialChatId }: MessagesProps
                             )}
                           </div>
                           {isLastInGroup && (
-                            <span className="text-[9px] text-slate-400 dark:text-slate-500 mt-1 px-1">{msg.timestamp}</span>
+                            <div className="flex items-center justify-between mt-1 px-1">
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500">{msg.timestamp}</span>
+                              {msg.isMe && activeChat && (
+                                <div className="flex -space-x-1">
+                                  {Object.entries(activeChat.lastRead || {})
+                                    .filter(([uid, time]) => {
+                                      if (uid === user.uid) return false;
+                                      const readTime = (time as any)?.toDate();
+                                      const msgTime = msg.rawTimestamp?.toDate();
+                                      return readTime && msgTime && readTime >= msgTime;
+                                    })
+                                    .map(([uid]) => (
+                                      <img 
+                                        key={uid}
+                                        src={activeChat.participantsInfo?.[uid]?.photoURL || `https://ui-avatars.com/api/?name=${activeChat.participantsInfo?.[uid]?.displayName}`}
+                                        className="w-3 h-3 rounded-full border border-white dark:border-slate-900 object-cover"
+                                        title={`Seen by ${activeChat.participantsInfo?.[uid]?.displayName}`}
+                                        referrerPolicy="no-referrer"
+                                      />
+                                    ))}
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
                       </motion.div>
