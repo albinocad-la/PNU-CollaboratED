@@ -28,6 +28,7 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCourse, setFilterCourse] = useState('All Courses');
   const [deckToDelete, setDeckToDelete] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -120,7 +121,8 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
   };
 
   const confirmDelete = async () => {
-    if (deckToDelete) {
+    if (deckToDelete && !isDeleting) {
+      setIsDeleting(true);
       try {
         await deleteDeck(deckToDelete);
         setDeckToDelete(null);
@@ -128,6 +130,8 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
         console.error("Error deleting deck:", error);
         setErrorMessage("Failed to delete deck. Please try again.");
         setTimeout(() => setErrorMessage(null), 5000);
+      } finally {
+        setIsDeleting(false);
       }
     }
   };
@@ -388,9 +392,17 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
                 </button>
                 <button 
                   onClick={confirmDelete}
-                  className="flex-1 py-3 bg-red-600 text-white rounded-2xl font-bold hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20"
+                  disabled={isDeleting}
+                  className="flex-1 py-3 bg-red-600 text-white rounded-2xl font-bold hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  Delete
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    'Delete'
+                  )}
                 </button>
               </div>
             </motion.div>

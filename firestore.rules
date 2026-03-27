@@ -11,7 +11,11 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() &&
-        (request.auth.token.email == "loveyouaudley@gmail.com" && request.auth.token.email_verified == true);
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+          (request.auth.token.email == "loveyouaudley@gmail.com" && request.auth.token.email_verified == true)
+        );
     }
 
     function isValidEmail(email) {
@@ -184,7 +188,7 @@ service cloud.firestore {
       allow update: if isAuthenticated() && resource != null && (resource.data.userId == request.auth.uid || isAdmin()) && 
                       isValidReviewDeck(request.resource.data) &&
                       request.resource.data.userId == resource.data.userId;
-      allow delete: if isAuthenticated() && resource != null && (resource.data.userId == request.auth.uid || isAdmin());
+      allow delete: if isAuthenticated() && (isAdmin() || (resource != null && resource.data.userId == request.auth.uid));
 
       match /flashcards/{cardId} {
         allow read: if isAuthenticated() && (get(/databases/$(database)/documents/decks/$(deckId)).data.userId == request.auth.uid || isAdmin());
