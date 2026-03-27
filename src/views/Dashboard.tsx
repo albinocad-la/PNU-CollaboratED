@@ -9,15 +9,10 @@ import SlideButton from '../components/SlideButton';
 import { useStudy } from '../contexts/StudyContext';
 import { ReviewDeck, StudySession } from '../types';
 import { 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
-  AreaChart,
-  Area
-} from 'recharts';
-import { format, startOfWeek, eachDayOfInterval, subDays } from 'date-fns';
+  format, 
+  startOfWeek, 
+  subDays 
+} from 'date-fns';
 
 interface Todo {
   id: string;
@@ -54,7 +49,6 @@ export default function Dashboard({ onCourseClick, onChatClick, onViewAllCourses
     studyTime: 0,
     cardsReviewed: 0,
   });
-  const [dailyData, setDailyData] = useState<any[]>([]);
   const [streak, setStreak] = useState(0);
   const [realDecks, setRealDecks] = useState<ReviewDeck[]>([]);
   const [realTodos, setRealTodos] = useState<Todo[]>([]);
@@ -66,10 +60,6 @@ export default function Dashboard({ onCourseClick, onChatClick, onViewAllCourses
     // 1. Fetch Weekly Stats & Streak (Existing)
     const now = new Date();
     const startOfCurrentWeek = startOfWeek(now);
-    const last7Days = eachDayOfInterval({
-      start: subDays(now, 6),
-      end: now
-    });
 
     const sessionsRef = collection(db, 'users', user.uid, 'sessions');
     const qSessions = query(
@@ -81,30 +71,13 @@ export default function Dashboard({ onCourseClick, onChatClick, onViewAllCourses
     const unsubSessions = onSnapshot(qSessions, (snapshot) => {
       let totalMinutes = 0;
       let totalCards = 0;
-      const dayMap = new Map();
       const allSessionDates = new Set<string>();
       
-      last7Days.forEach(day => {
-        const dateKey = format(day, 'yyyy-MM-dd');
-        dayMap.set(dateKey, {
-          date: format(day, 'MMM dd'),
-          fullDate: dateKey,
-          minutes: 0,
-          cards: 0
-        });
-      });
-
       snapshot.forEach((doc) => {
         const data = doc.data();
         const sessionDate = data.startTime.toDate();
         const dateKey = format(sessionDate, 'yyyy-MM-dd');
         allSessionDates.add(dateKey);
-
-        if (dayMap.has(dateKey)) {
-          const dayData = dayMap.get(dateKey);
-          dayData.minutes += data.durationMinutes || 0;
-          dayData.cards += data.cardsReviewed || 0;
-        }
 
         if (sessionDate >= startOfCurrentWeek) {
           totalMinutes += data.durationMinutes || 0;
@@ -124,7 +97,6 @@ export default function Dashboard({ onCourseClick, onChatClick, onViewAllCourses
 
       setStreak(currentStreak);
       setWeeklyStats({ studyTime: totalMinutes, cardsReviewed: totalCards });
-      setDailyData(Array.from(dayMap.values()));
       setLoading(false);
     });
 
@@ -190,25 +162,6 @@ export default function Dashboard({ onCourseClick, onChatClick, onViewAllCourses
     if (courseDecks.length === 0) return 0;
     const totalProgress = courseDecks.reduce((acc, d) => acc + d.progress, 0);
     return Math.round(totalProgress / courseDecks.length);
-  };
-
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-white dark:bg-slate-900 p-3 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl">
-          <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">{label}</p>
-          <p className="text-sm font-black text-indigo-600 dark:text-indigo-400">
-            {payload[0].value} mins study
-          </p>
-          {payload[1] && (
-            <p className="text-sm font-black text-purple-600 dark:text-purple-400">
-              {payload[1].value} cards reviewed
-            </p>
-          )}
-        </div>
-      );
-    }
-    return null;
   };
 
   return (
@@ -293,72 +246,6 @@ export default function Dashboard({ onCourseClick, onChatClick, onViewAllCourses
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Main Column */}
         <div className="lg:col-span-2 space-y-8">
-          {/* Weekly Activity Chart */}
-          <section className="glass-card p-8 rounded-[2rem]">
-            <div className="flex items-center justify-between mb-8">
-              <div>
-                <h3 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-indigo-500" />
-                  Weekly Activity
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Your study time and card reviews over the last 7 days</p>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-indigo-500"></div>
-                  <span className="text-[10px] font-bold text-slate-500 uppercase">Study</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-                  <span className="text-[10px] font-bold text-slate-500 uppercase">Cards</span>
-                </div>
-              </div>
-            </div>
-            
-            <div className="h-[300px] w-full min-h-[300px]">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={100}>
-                <AreaChart data={dailyData}>
-                  <defs>
-                    <linearGradient id="colorMinutes" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorCards" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#a855f7" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
-                  <XAxis 
-                    dataKey="date" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fontSize: 10, fontWeight: 600, fill: '#94a3b8' }}
-                    dy={10}
-                  />
-                  <YAxis hide />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Area 
-                    type="monotone" 
-                    dataKey="minutes" 
-                    stroke="#6366f1" 
-                    strokeWidth={3}
-                    fillOpacity={1} 
-                    fill="url(#colorMinutes)" 
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="cards" 
-                    stroke="#a855f7" 
-                    strokeWidth={3}
-                    fillOpacity={1} 
-                    fill="url(#colorCards)" 
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </section>
-
           {/* Enrolled Courses */}
           <section>
             <div className="flex items-center justify-between mb-6 px-2">
