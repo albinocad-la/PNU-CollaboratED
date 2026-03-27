@@ -2,12 +2,25 @@ import { auth, googleProvider } from '../firebase';
 import { signInWithPopup } from 'firebase/auth';
 import { motion } from 'motion/react';
 import { LogIn, Loader2, AlertCircle } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import SlideButton from '../components/SlideButton';
 
 export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isStorageBlocked, setIsStorageBlocked] = useState(false);
+
+  useEffect(() => {
+    // Check if storage is accessible
+    try {
+      localStorage.setItem('storage_test', 'test');
+      localStorage.removeItem('storage_test');
+    } catch (e) {
+      console.warn('Storage is inaccessible:', e);
+      setIsStorageBlocked(true);
+      setError('Browser storage is inaccessible. This often happens in private mode or if third-party cookies are blocked in an iframe.');
+    }
+  }, []);
 
   const handleLogin = async () => {
     setLoading(true);
@@ -44,9 +57,19 @@ export default function Login() {
         <p className="text-slate-400 mb-8">Collaborate, study, and excel with your peers at Philippine Normal University.</p>
         
         {error && (
-          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-400 text-sm text-left">
-            <AlertCircle className="w-5 h-5 shrink-0" />
-            <p>{error}</p>
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex flex-col gap-3 text-red-400 text-sm text-left">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <p>{error}</p>
+            </div>
+            {isStorageBlocked && (
+              <button 
+                onClick={() => window.open(window.location.href, '_blank')}
+                className="mt-2 w-full py-2 px-4 bg-red-500/20 hover:bg-red-500/30 text-red-400 font-bold rounded-xl transition-all"
+              >
+                Open in New Tab
+              </button>
+            )}
           </div>
         )}
 
