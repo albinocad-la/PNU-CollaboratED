@@ -93,8 +93,8 @@ export const reviewDecks: ReviewDeck[] = [
 ];
 
 export const flashcards: Flashcard[] = [
-  { id: 'f1', deckId: 'd1', front: 'Who is the father of modern philosophy?', back: 'Rene Descartes' },
-  { id: 'f2', deckId: 'd1', front: 'What is the "Looking Glass Self"?', back: 'Charles Horton Cooley\'s concept that our self-image comes from how we think others see us.' },
-  { id: 'f3', deckId: 'd2', front: 'When was the Proclamation of Philippine Independence?', back: 'June 12, 1898' },
-  { id: 'f4', deckId: 'd3', front: 'What is the Fibonacci sequence?', back: 'A series of numbers where each number is the sum of the two preceding ones.' },
+  { id: 'f1', deckId: 'd1', front: 'Who is the father of modern philosophy?', back: 'Rene Descartes', mastery: 60, isMastered: false },
+  { id: 'f2', deckId: 'd1', front: 'What is the "Looking Glass Self"?', back: 'Charles Horton Cooley\'s concept that our self-image comes from how we think others see us.', mastery: 40, isMastered: false },
+  { id: 'f3', deckId: 'd2', front: 'When was the Proclamation of Philippine Independence?', back: 'June 12, 1898', mastery: 100, isMastered: true },
+  { id: 'f4', deckId: 'd3', front: 'What is the Fibonacci sequence?', back: 'A series of numbers where each number is the sum of the two preceding ones.', mastery: 20, isMastered: false },
 ];

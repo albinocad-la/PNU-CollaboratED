@@ -1,10 +1,10 @@
 import { courses } from '../data';
-import { Layers, Play, Plus, Search, MoreVertical, RotateCcw, ChevronLeft, ChevronRight, Check, X, Upload, FileText, Loader2, Trash2, AlertCircle } from 'lucide-react';
+import { Layers, Play, Plus, Search, MoreVertical, RotateCcw, ChevronLeft, ChevronRight, Check, X, Upload, FileText, Loader2, Trash2, AlertCircle, Edit2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from 'firebase/auth';
 import { ReviewDeck, Flashcard } from '../types';
-import { subscribeToDecks, getFlashcards, createDeck, addFlashcard, addFlashcardsBatch, deleteDeck, generateFlashcardsFromFile } from '../services/deckService';
+import { subscribeToDecks, getFlashcards, createDeck, addFlashcard, addFlashcardsBatch, deleteDeck, generateFlashcardsFromFile, updateFlashcardMastery } from '../services/deckService';
 import SlideButton from '../components/SlideButton';
 import { useStudy } from '../contexts/StudyContext';
 
@@ -25,12 +25,30 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
   const [selectedCourseId, setSelectedCourseId] = useState(courses[0].id);
   const [isCreating, setIsCreating] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [creationMode, setCreationMode] = useState<'upload' | 'manual'>('upload');
+  const [manualCards, setManualCards] = useState<{ front: string; back: string }[]>([]);
+  const [currentManualFront, setCurrentManualFront] = useState('');
+  const [currentManualBack, setCurrentManualBack] = useState('');
+  const [editingManualCardIndex, setEditingManualCardIndex] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCourse, setFilterCourse] = useState('All Courses');
   const [deckToDelete, setDeckToDelete] = useState<string | null>(null);
+  const [addCardsToDeckId, setAddCardsToDeckId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const resetCreationState = () => {
+    setNewDeckTitle('');
+    setUploadFile(null);
+    setManualCards([]);
+    setCurrentManualFront('');
+    setCurrentManualBack('');
+    setEditingManualCardIndex(null);
+    setCreationMode('upload');
+    setShowCreateModal(false);
+    setAddCardsToDeckId(null);
+  };
 
   useEffect(() => {
     const unsubscribe = subscribeToDecks(user.uid, (data) => {
@@ -59,7 +77,18 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
     setIsFlipped(false);
   };
 
-  const handleNextCard = () => {
+  const handleNextCard = async (isCorrect?: boolean) => {
+    if (activeDeckId && activeDeckFlashcards[currentCardIndex]) {
+      const card = activeDeckFlashcards[currentCardIndex];
+      if (isCorrect !== undefined) {
+        try {
+          await updateFlashcardMastery(activeDeckId, card.id, isCorrect);
+        } catch (error) {
+          console.error("Failed to update mastery:", error);
+        }
+      }
+    }
+
     if (currentCardIndex < activeDeckFlashcards.length - 1) {
       setIsFlipped(false);
       setTimeout(() => {
@@ -85,22 +114,57 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
     try {
       const deckId = await createDeck(user.uid, newDeckTitle, selectedCourseId);
       
-      if (uploadFile) {
+      if (creationMode === 'upload' && uploadFile) {
         // Convert file to flashcards using Gemini
         const generatedCards = await generateFlashcardsFromFile(uploadFile);
         if (generatedCards && generatedCards.length > 0) {
           await addFlashcardsBatch(deckId, generatedCards);
         }
+      } else if (creationMode === 'manual' && manualCards.length > 0) {
+        await addFlashcardsBatch(deckId, manualCards);
       }
       
       setShowCreateModal(false);
-      setNewDeckTitle('');
-      setUploadFile(null);
+      resetCreationState();
     } catch (error) {
       console.error("Error creating deck:", error);
       alert("Failed to create deck. Please try again.");
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const addManualCard = () => {
+    if (!currentManualFront.trim() || !currentManualBack.trim()) return;
+    
+    if (editingManualCardIndex !== null) {
+      const updatedCards = [...manualCards];
+      updatedCards[editingManualCardIndex] = { front: currentManualFront, back: currentManualBack };
+      setManualCards(updatedCards);
+      setEditingManualCardIndex(null);
+    } else {
+      setManualCards([...manualCards, { front: currentManualFront, back: currentManualBack }]);
+    }
+    
+    setCurrentManualFront('');
+    setCurrentManualBack('');
+  };
+
+  const editManualCard = (index: number) => {
+    const card = manualCards[index];
+    setCurrentManualFront(card.front);
+    setCurrentManualBack(card.back);
+    setEditingManualCardIndex(index);
+  };
+
+  const removeManualCard = (index: number) => {
+    setManualCards(manualCards.filter((_, i) => i !== index));
+    if (editingManualCardIndex === index) {
+      setEditingManualCardIndex(null);
+      setCurrentManualFront('');
+      setCurrentManualBack('');
+    } else if (editingManualCardIndex !== null && editingManualCardIndex > index) {
+      setEditingManualCardIndex(editingManualCardIndex - 1);
     }
   };
 
@@ -133,6 +197,20 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
       } finally {
         setIsDeleting(false);
       }
+    }
+  };
+
+  const handleAddCardsToExisting = async () => {
+    if (!addCardsToDeckId || manualCards.length === 0) return;
+    setIsCreating(true);
+    try {
+      await addFlashcardsBatch(addCardsToDeckId, manualCards);
+      resetCreationState();
+    } catch (error) {
+      console.error("Error adding cards:", error);
+      alert("Failed to add cards. Please try again.");
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -207,13 +285,13 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
             {isFlipped ? (
               <div className="flex gap-2 sm:gap-4">
                 <button 
-                  onClick={handleNextCard}
+                  onClick={() => handleNextCard(false)}
                   className="px-4 sm:px-8 py-2.5 sm:py-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-semibold hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors flex items-center gap-1 sm:gap-2 text-sm sm:text-base"
                 >
                   <X className="w-4 h-4 sm:w-5 h-5" /> Again
                 </button>
                 <button 
-                  onClick={handleNextCard}
+                  onClick={() => handleNextCard(true)}
                   className="px-4 sm:px-8 py-2.5 sm:py-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors flex items-center gap-1 sm:gap-2 text-sm sm:text-base"
                 >
                   <Check className="w-4 h-4 sm:w-5 h-5" /> Got it
@@ -229,7 +307,7 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
             )}
 
             <button 
-              onClick={handleNextCard}
+              onClick={() => handleNextCard()}
               disabled={currentCardIndex === activeDeckFlashcards.length - 1 && !isFlipped}
               className="p-3 sm:p-4 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
             >
@@ -256,7 +334,10 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
         <div className="flex items-center gap-4 w-full sm:w-auto">
           <SlideButton label="Study Mode" isActive={isStudyMode} onToggle={toggleStudyMode} />
           <button 
-            onClick={() => setShowCreateModal(true)}
+            onClick={() => {
+              resetCreationState();
+              setShowCreateModal(true);
+            }}
             className="flex-1 sm:flex-none bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors shadow-sm flex items-center justify-center gap-2"
           >
             <Plus className="w-5 h-5" />
@@ -339,13 +420,24 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
               </div>
             </div>
             
-            <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 flex gap-2">
               <button 
                 onClick={() => handleStartReview(deck.id)}
-                className="w-full py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-xl font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-sm flex items-center justify-center gap-2"
+                className="flex-[2] py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-xl font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-sm flex items-center justify-center gap-2"
               >
                 <Play className="w-4 h-4 fill-current" />
-                Review Now
+                Review
+              </button>
+              <button 
+                onClick={() => {
+                  resetCreationState();
+                  setAddCardsToDeckId(deck.id);
+                  setCreationMode('manual');
+                }}
+                className="flex-1 py-2.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-xl font-semibold hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-all shadow-sm flex items-center justify-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Add
               </button>
             </div>
           </div>
@@ -410,7 +502,126 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
         )}
       </AnimatePresence>
 
-      {/* Create Deck Modal */}
+      {/* Add Cards to Existing Deck Modal */}
+      <AnimatePresence>
+        {addCardsToDeckId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={resetCreationState}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800"
+            >
+              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <h3 className="text-xl font-bold text-slate-800 dark:text-white">Add Cards to Deck</h3>
+                <button onClick={resetCreationState} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 dark:text-slate-500">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
+                <div className="space-y-4">
+                  <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Front Side</label>
+                      <textarea
+                        value={currentManualFront}
+                        onChange={(e) => setCurrentManualFront(e.target.value)}
+                        placeholder="Question or term..."
+                        rows={2}
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:border-indigo-500 transition-all outline-none text-sm text-slate-800 dark:text-slate-200 resize-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Back Side</label>
+                      <textarea
+                        value={currentManualBack}
+                        onChange={(e) => setCurrentManualBack(e.target.value)}
+                        placeholder="Answer or definition..."
+                        rows={2}
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:border-indigo-500 transition-all outline-none text-sm text-slate-800 dark:text-slate-200 resize-none"
+                      />
+                    </div>
+                    <button
+                      onClick={addManualCard}
+                      disabled={!currentManualFront.trim() || !currentManualBack.trim()}
+                      className="w-full py-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg font-bold text-sm hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all disabled:opacity-50"
+                    >
+                      {editingManualCardIndex !== null ? 'Update Card' : 'Add Card to List'}
+                    </button>
+                    {editingManualCardIndex !== null && (
+                      <button
+                        onClick={() => {
+                          setEditingManualCardIndex(null);
+                          setCurrentManualFront('');
+                          setCurrentManualBack('');
+                        }}
+                        className="w-full py-1 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"
+                      >
+                        Cancel Edit
+                      </button>
+                    )}
+                  </div>
+
+                  {manualCards.length > 0 && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Added Cards ({manualCards.length})</label>
+                      <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                        {manualCards.map((card, idx) => (
+                          <div key={idx} className={`p-3 border rounded-xl flex items-center justify-between gap-3 group transition-all ${editingManualCardIndex === idx ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700'}`}>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-bold text-slate-800 dark:text-white truncate">{card.front}</p>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{card.back}</p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button 
+                                onClick={() => editManualCard(idx)}
+                                className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-all"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={() => removeManualCard(idx)}
+                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800">
+                <button 
+                  onClick={handleAddCardsToExisting}
+                  disabled={manualCards.length === 0 || isCreating}
+                  className="w-full py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isCreating ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Adding Cards...
+                    </>
+                  ) : (
+                    `Add ${manualCards.length} Cards to Deck`
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
       <AnimatePresence>
         {showCreateModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -418,7 +629,7 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setShowCreateModal(false)}
+              onClick={resetCreationState}
               className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
             />
             <motion.div 
@@ -429,12 +640,12 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
             >
               <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
                 <h3 className="text-xl font-bold text-slate-800 dark:text-white">Create New Deck</h3>
-                <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 dark:text-slate-500">
+                <button onClick={resetCreationState} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 dark:text-slate-500">
                   <X className="w-6 h-6" />
                 </button>
               </div>
               
-              <div className="p-6 space-y-6">
+              <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Deck Title</label>
                   <input
@@ -457,56 +668,149 @@ const ReviewDecks: React.FC<ReviewDecksProps> = ({ user, initialDeckId }) => {
                   </select>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Upload Material (Optional)</label>
-                  <div 
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl p-8 text-center hover:border-indigo-500 dark:hover:border-indigo-500/50 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all cursor-pointer group"
-                  >
-                    <input 
-                      type="file" 
-                      ref={fileInputRef} 
-                      onChange={handleFileChange} 
-                      className="hidden" 
-                      accept=".pdf,.doc,.docx,.txt"
-                    />
-                    {uploadFile ? (
-                      <div className="flex items-center justify-center gap-3 text-indigo-600 dark:text-indigo-400">
-                        <FileText className="w-8 h-8" />
-                        <div className="text-left">
-                          <p className="font-bold text-sm truncate max-w-[200px]">{uploadFile.name}</p>
-                          <p className="text-xs opacity-70">{(uploadFile.size / 1024 / 1024).toFixed(2)} MB</p>
-                        </div>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); setUploadFile(null); }}
-                          className="p-1 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 rounded-full"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto text-slate-400 dark:text-slate-500 group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900/30 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                          <Upload className="w-6 h-6" />
-                        </div>
-                        <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Click to upload study material</p>
-                        <p className="text-xs text-slate-400 dark:text-slate-500">PDF (max 750KB), DOC, TXT</p>
-                      </div>
-                    )}
+                <div className="space-y-4">
+                  <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+                    <button
+                      onClick={() => setCreationMode('upload')}
+                      className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${creationMode === 'upload' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+                    >
+                      Upload File
+                    </button>
+                    <button
+                      onClick={() => setCreationMode('manual')}
+                      className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${creationMode === 'manual' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+                    >
+                      Manual Entry
+                    </button>
                   </div>
+
+                  {creationMode === 'upload' ? (
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Upload Material (Optional)</label>
+                      <div 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl p-8 text-center hover:border-indigo-500 dark:hover:border-indigo-500/50 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all cursor-pointer group"
+                      >
+                        <input 
+                          type="file" 
+                          ref={fileInputRef} 
+                          onChange={handleFileChange} 
+                          className="hidden" 
+                          accept=".pdf,.doc,.docx,.txt"
+                        />
+                        {uploadFile ? (
+                          <div className="flex items-center justify-center gap-3 text-indigo-600 dark:text-indigo-400">
+                            <FileText className="w-8 h-8" />
+                            <div className="text-left">
+                              <p className="font-bold text-sm truncate max-w-[200px]">{uploadFile.name}</p>
+                              <p className="text-xs opacity-70">{(uploadFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                            </div>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); setUploadFile(null); }}
+                              className="p-1 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 rounded-full"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto text-slate-400 dark:text-slate-500 group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900/30 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                              <Upload className="w-6 h-6" />
+                            </div>
+                            <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Click to upload study material</p>
+                            <p className="text-xs text-slate-400 dark:text-slate-500">PDF (max 750KB), DOC, TXT</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Front Side</label>
+                          <textarea
+                            value={currentManualFront}
+                            onChange={(e) => setCurrentManualFront(e.target.value)}
+                            placeholder="Question or term..."
+                            rows={2}
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:border-indigo-500 transition-all outline-none text-sm text-slate-800 dark:text-slate-200 resize-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Back Side</label>
+                          <textarea
+                            value={currentManualBack}
+                            onChange={(e) => setCurrentManualBack(e.target.value)}
+                            placeholder="Answer or definition..."
+                            rows={2}
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:border-indigo-500 transition-all outline-none text-sm text-slate-800 dark:text-slate-200 resize-none"
+                          />
+                        </div>
+                        <button
+                          onClick={addManualCard}
+                          disabled={!currentManualFront.trim() || !currentManualBack.trim()}
+                          className="w-full py-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg font-bold text-sm hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all disabled:opacity-50"
+                        >
+                          {editingManualCardIndex !== null ? 'Update Card' : 'Add Card to List'}
+                        </button>
+                        {editingManualCardIndex !== null && (
+                          <button
+                            onClick={() => {
+                              setEditingManualCardIndex(null);
+                              setCurrentManualFront('');
+                              setCurrentManualBack('');
+                            }}
+                            className="w-full py-1 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"
+                          >
+                            Cancel Edit
+                          </button>
+                        )}
+                      </div>
+
+                      {manualCards.length > 0 && (
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Added Cards ({manualCards.length})</label>
+                          <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                            {manualCards.map((card, idx) => (
+                              <div key={idx} className={`p-3 border rounded-xl flex items-center justify-between gap-3 group transition-all ${editingManualCardIndex === idx ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700'}`}>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-bold text-slate-800 dark:text-white truncate">{card.front}</p>
+                                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{card.back}</p>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <button 
+                                    onClick={() => editManualCard(idx)}
+                                    className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-all"
+                                  >
+                                    <Edit2 className="w-4 h-4" />
+                                  </button>
+                                  <button 
+                                    onClick={() => removeManualCard(idx)}
+                                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800">
                 <button 
                   onClick={handleCreateDeck}
-                  disabled={!newDeckTitle.trim() || isCreating}
+                  disabled={!newDeckTitle.trim() || isCreating || (creationMode === 'manual' && manualCards.length === 0)}
                   className="w-full py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {isCreating ? (
                     <>
                       <Loader2 className="w-5 h-5 animate-spin" />
-                      {uploadFile ? 'Generating Flashcards...' : 'Creating Deck...'}
+                      {creationMode === 'upload' && uploadFile ? 'Generating Flashcards...' : 'Creating Deck...'}
                     </>
                   ) : (
                     'Create Deck'

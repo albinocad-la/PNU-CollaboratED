@@ -110,6 +110,8 @@ export const addFlashcard = async (deckId: string, front: string, back: string) 
     deckId,
     front,
     back,
+    mastery: 0,
+    isMastered: false,
     createdAt: serverTimestamp()
   };
 
@@ -150,6 +152,8 @@ export const addFlashcardsBatch = async (deckId: string, cards: { front: string,
       deckId,
       front: card.front,
       back: card.back,
+      mastery: 0,
+      isMastered: false,
       createdAt: serverTimestamp()
     });
   });
@@ -178,6 +182,46 @@ export const deleteDeck = async (deckId: string) => {
     await deleteDoc(doc(db, 'decks', deckId));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
+    throw error;
+  }
+};
+
+export const updateFlashcardMastery = async (deckId: string, cardId: string, isCorrect: boolean) => {
+  const cardRef = doc(db, 'decks', deckId, 'flashcards', cardId);
+  const deckRef = doc(db, 'decks', deckId);
+
+  try {
+    const cardDoc = await getDoc(cardRef);
+    if (!cardDoc.exists()) return;
+
+    const currentMastery = cardDoc.data().mastery || 0;
+    let newMastery = isCorrect ? currentMastery + 25 : currentMastery - 10;
+    newMastery = Math.max(0, Math.min(100, newMastery));
+    const isMastered = newMastery >= 100;
+
+    await updateDoc(cardRef, {
+      mastery: newMastery,
+      isMastered
+    });
+
+    // Update deck progress
+    const flashcardsRef = collection(db, 'decks', deckId, 'flashcards');
+    const masteredQuery = query(flashcardsRef, where('isMastered', '==', true));
+    const masteredSnapshot = await getDocs(masteredQuery);
+    const masteredCount = masteredSnapshot.size;
+
+    const deckDoc = await getDoc(deckRef);
+    const totalCards = deckDoc.data()?.cardsCount || 1;
+    const progress = Math.round((masteredCount / totalCards) * 100);
+
+    await updateDoc(deckRef, {
+      progress,
+      lastReviewed: serverTimestamp()
+    });
+
+    return { newMastery, isMastered, progress };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `decks/${deckId}/flashcards/${cardId}`);
     throw error;
   }
 };

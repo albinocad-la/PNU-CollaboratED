@@ -106,6 +106,7 @@ service cloud.firestore {
              data.courseId is string && data.courseId.size() > 0 && data.courseId.size() < 100 &&
              data.cardsCount is number &&
              data.progress is number &&
+             (!('lastReviewed' in data) || data.lastReviewed is timestamp || data.lastReviewed == null) &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
@@ -114,6 +115,8 @@ service cloud.firestore {
              data.deckId is string && data.deckId.size() > 0 && data.deckId.size() < 100 &&
              data.front is string && data.front.size() > 0 && data.front.size() < 5000 &&
              data.back is string && data.back.size() > 0 && data.back.size() < 5000 &&
+             (!('mastery' in data) || data.mastery is number) &&
+             (!('isMastered' in data) || data.isMastered is bool) &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 

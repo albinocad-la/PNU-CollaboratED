@@ -105,6 +105,8 @@ export interface Flashcard {
   deckId: string;
   front: string;
   back: string;
+  mastery: number; // 0-100
+  isMastered: boolean;
   createdAt?: any;
 }
 

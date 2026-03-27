@@ -150,13 +150,15 @@
     },
     "Flashcard": {
       "title": "Flashcard",
-      "description": "A single flashcard with a front and back side.",
+      "description": "A single flashcard with a front and back side, including mastery tracking.",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "deckId": { "type": "string" },
         "front": { "type": "string" },
         "back": { "type": "string" },
+        "mastery": { "type": "number", "description": "Mastery level from 0 to 100." },
+        "isMastered": { "type": "boolean", "description": "Whether the card is considered mastered." },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["deckId", "front", "back"]
