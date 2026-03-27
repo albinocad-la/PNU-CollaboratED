@@ -80,7 +80,14 @@ export default function Profile({ user, targetUserId, onChatClick }: ProfileProp
         
         let profile = {} as UserProfileData;
         if (docSnap.exists()) {
-          profile = docSnap.data() as UserProfileData;
+          const data = docSnap.data();
+          profile = {
+            ...data,
+            displayName: data.displayName || '',
+            photoURL: data.photoURL || '',
+            ugNumber: data.ugNumber || '',
+            bio: data.bio || '',
+          } as UserProfileData;
         } else if (isOwnProfile) {
           // If no profile exists and it's own profile, pre-fill with auth data
           profile = {
@@ -309,12 +316,14 @@ export default function Profile({ user, targetUserId, onChatClick }: ProfileProp
                 </label>
                 <input 
                   type="text" 
-                  value={profileData.ugNumber}
+                  value={profileData.ugNumber || ''}
                   onChange={(e) => setProfileData({ ...profileData, ugNumber: e.target.value })}
                   disabled={!isOwnProfile}
+                  maxLength={20}
                   className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-900/30 transition-all outline-none text-slate-800 dark:text-slate-200 ${!isOwnProfile ? 'cursor-default opacity-80' : ''}`}
                   placeholder="e.g. UG-2023-001"
                 />
+                {isOwnProfile && <p className="text-[10px] text-slate-400 dark:text-slate-500">Maximum 20 characters.</p>}
               </div>
 
               {isOwnProfile && (
@@ -340,13 +349,15 @@ export default function Profile({ user, targetUserId, onChatClick }: ProfileProp
                 Bio
               </label>
               <textarea 
-                value={profileData.bio}
+                value={profileData.bio || ''}
                 onChange={(e) => setProfileData({ ...profileData, bio: e.target.value })}
                 rows={4}
                 disabled={!isOwnProfile}
+                maxLength={500}
                 className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-900/30 transition-all outline-none text-slate-800 dark:text-slate-200 resize-none ${!isOwnProfile ? 'cursor-default opacity-80' : ''}`}
                 placeholder={isOwnProfile ? "Tell us a little about yourself..." : "No bio provided."}
               />
+              {isOwnProfile && <p className="text-[10px] text-slate-400 dark:text-slate-500 text-right">{profileData.bio?.length || 0}/500</p>}
             </div>
 
             {isOwnProfile && (

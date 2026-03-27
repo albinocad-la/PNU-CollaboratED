@@ -215,7 +215,8 @@ export const initializeCourseChats = async (courses: any[], userId?: string, use
           needsUpdate = true;
         }
 
-        if (userName && !participantsInfo[userId]) {
+        const currentInfo = participantsInfo[userId];
+        if (userName && (!currentInfo || currentInfo.displayName !== userName || currentInfo.photoURL !== (userPhoto || ''))) {
           updates[`participantsInfo.${userId}`] = {
             displayName: userName,
             photoURL: userPhoto || ''

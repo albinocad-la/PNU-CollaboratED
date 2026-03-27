@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { View, UserProfile } from './types';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -98,9 +98,22 @@ export default function App() {
 
         const updateCombinedProfile = () => {
           if (publicProfile) {
-            setProfile({
+            const newProfile = {
               ...publicProfile,
               email: privateProfile?.email || user.email || ''
+            };
+            
+            // Avoid redundant updates if profile hasn't changed
+            setProfile(prev => {
+              if (prev && 
+                  prev.displayName === newProfile.displayName && 
+                  prev.photoURL === newProfile.photoURL && 
+                  prev.email === newProfile.email &&
+                  JSON.stringify(prev.bio) === JSON.stringify(newProfile.bio) &&
+                  JSON.stringify(prev.interests) === JSON.stringify(newProfile.interests)) {
+                return prev;
+              }
+              return newProfile;
             });
           }
         };
@@ -220,32 +233,56 @@ export default function App() {
     setCurrentView('profile');
   };
 
+  const handleChatChange = useCallback((id: string | undefined) => {
+    setSelectedChatId(id);
+  }, []);
+
   const renderView = () => {
-    switch (currentView) {
-      case 'dashboard': return <Dashboard key="dashboard" user={user!} profile={profile} onCourseClick={handleCourseClick} onChatClick={handleChatClick} onViewAllCourses={() => handleNavigate('courses')} onViewCalendar={() => handleNavigate('calendar')} onNavigate={handleNavigate} />;
-      case 'courses': return <Courses key="courses" onCourseClick={handleCourseClick} onChatClick={handleChatClick} />;
-      case 'messages': return <Messages key="messages" user={user!} profile={profile} initialChatId={selectedChatId} />;
-      case 'decks': return <ReviewDecks key="decks" user={user!} initialDeckId={selectedDeckId} />;
-      case 'course-detail': return <CourseDetail key="course-detail" courseId={selectedCourseId} onBack={handleBack} onChatClick={handleChatClick} onReviewClick={handleReviewClick} />;
-      case 'calendar': return <Calendar key="calendar" />;
-      case 'profile': return <Profile key="profile" user={user!} targetUserId={selectedProfileId} onChatClick={handleChatClick} />;
-      case 'settings': return <Settings key="settings" user={user!} profile={profile} onLogout={handleLogout} />;
-      case 'community': return <Community key="community" currentUser={profile as UserProfile} onNavigate={handleNavigate} onChatClick={handleChatClick} />;
-      case 'search': return <SearchResults key="search" onNavigate={(view: View, id?: string) => {
-        if (view === 'course-detail' && id) {
-          handleCourseClick(id);
-        } else if (view === 'messages' && id) {
-          handleChatClick(id);
-        } else if (view === 'decks' && id) {
-          handleReviewClick(id);
-        } else if (view === 'profile' && id) {
-          handleProfileClick(id);
-        } else {
-          handleNavigate(view);
-        }
-      }} />;
-      default: return <Dashboard key="dashboard" user={user!} profile={profile} onCourseClick={handleCourseClick} onChatClick={handleChatClick} onViewAllCourses={() => handleNavigate('courses')} onViewCalendar={() => handleNavigate('calendar')} onNavigate={handleNavigate} />;
-    }
+    return (
+      <motion.div
+        key={currentView + (selectedProfileId || '') + (selectedCourseId || '')}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -10 }}
+        transition={{ duration: 0.3, ease: "easeInOut" }}
+        className="h-full"
+      >
+        {(() => {
+          switch (currentView) {
+            case 'dashboard': return <Dashboard user={user!} profile={profile} onCourseClick={handleCourseClick} onChatClick={handleChatClick} onViewAllCourses={() => handleNavigate('courses')} onViewCalendar={() => handleNavigate('calendar')} onNavigate={handleNavigate} />;
+            case 'courses': return <Courses onCourseClick={handleCourseClick} onChatClick={handleChatClick} />;
+            case 'messages': return (
+              <Messages 
+                user={user!} 
+                profile={profile} 
+                initialChatId={selectedChatId} 
+                onChatChange={handleChatChange}
+              />
+            );
+            case 'decks': return <ReviewDecks user={user!} initialDeckId={selectedDeckId} />;
+            case 'course-detail': return <CourseDetail courseId={selectedCourseId} onBack={handleBack} onChatClick={handleChatClick} onReviewClick={handleReviewClick} />;
+            case 'calendar': return <Calendar />;
+            case 'profile': return <Profile user={user!} targetUserId={selectedProfileId} onChatClick={handleChatClick} />;
+            case 'settings': return <Settings user={user!} profile={profile} onLogout={handleLogout} />;
+            case 'community': return <Community currentUser={profile as UserProfile} onNavigate={handleNavigate} onChatClick={handleChatClick} />;
+            case 'search': return <SearchResults onNavigate={(view: View, id?: string) => {
+              if (view === 'course-detail' && id) {
+                handleCourseClick(id);
+              } else if (view === 'messages' && id) {
+                handleChatClick(id);
+              } else if (view === 'decks' && id) {
+                handleReviewClick(id);
+              } else if (view === 'profile' && id) {
+                handleProfileClick(id);
+              } else {
+                handleNavigate(view);
+              }
+            }} />;
+            default: return <Dashboard user={user!} profile={profile} onCourseClick={handleCourseClick} onChatClick={handleChatClick} onViewAllCourses={() => handleNavigate('courses')} onViewCalendar={() => handleNavigate('calendar')} onNavigate={handleNavigate} />;
+          }
+        })()}
+      </motion.div>
+    );
   };
 
   const handleNavigate = (view: View, id?: string) => {

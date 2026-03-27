@@ -118,7 +118,7 @@ const Community: React.FC<CommunityProps> = ({ currentUser, onNavigate, onChatCl
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 flex items-center justify-between group hover:border-indigo-300 dark:hover:border-indigo-500 transition-all shadow-sm cursor-pointer"
+      className="glass-card p-4 rounded-2xl border border-slate-200 dark:border-slate-700 flex items-center justify-between group hover:border-indigo-300 dark:hover:border-indigo-500 transition-all shadow-sm cursor-pointer"
       onClick={() => onNavigate('profile', user.uid)}
     >
       <div className="flex items-center gap-4">
