@@ -58,6 +58,7 @@ export interface Message {
   fileUrl?: string;
   fileName?: string;
   isDeleted?: boolean;
+  mentions?: string[];
   replyTo?: {
     id: string;
     senderName: string;

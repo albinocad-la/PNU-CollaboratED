@@ -22,17 +22,19 @@ service cloud.firestore {
 
     function isValidUrl(url) {
       return url is string &&
-        url.size() < 1000 &&
+        url.size() < 1000000 &&
         (url == "" || url.matches("^https://.*") || url.matches("^http://.*") || url.matches("^data:.*"));
     }
 
     function isValidUserProfile(data) {
       return data.uid == request.auth.uid &&
-             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100 &&
+             data.displayName is string && data.displayName.size() >= 0 && data.displayName.size() < 100 &&
              (!('photoURL' in data) || isValidUrl(data.photoURL)) &&
+             (!('displayNameLowercase' in data) || (data.displayNameLowercase is string && data.displayNameLowercase.size() < 100)) &&
              (!('ugNumber' in data) || (data.ugNumber is string && data.ugNumber.size() < 20)) &&
              (!('bio' in data) || (data.bio is string && data.bio.size() < 500)) &&
              (!('role' in data) || data.role in ['admin', 'user']) &&
+             (!('lastSeen' in data) || data.lastSeen is timestamp) &&
              (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
@@ -55,27 +57,33 @@ service cloud.firestore {
       return data.keys().hasAll(['type', 'participants']) &&
              data.type in ['course', 'group', 'direct'] &&
              data.participants is list &&
-             data.participants.size() <= 100 &&
+             data.participants.size() <= 10000 &&
              (data.type == 'course' || data.participants.size() >= 1) &&
-             (!('nicknames' in data) || (data.nicknames is map && data.nicknames.size() <= 100)) &&
-             (!('participantsInfo' in data) || (data.participantsInfo is map && data.participantsInfo.size() <= 100)) &&
+             (!('nicknames' in data) || (data.nicknames is map && data.nicknames.size() <= 10000)) &&
+             (!('participantsInfo' in data) || (data.participantsInfo is map && data.participantsInfo.size() <= 10000)) &&
              (!('avatar' in data) || isValidUrl(data.avatar)) &&
-             (!('deletedBy' in data) || (data.deletedBy is list && data.deletedBy.size() <= 100)) &&
-             (!('name' in data) || (data.name is string && data.name.size() > 0 && data.name.size() < 100));
+             (!('deletedBy' in data) || (data.deletedBy is list && data.deletedBy.size() <= 10000)) &&
+             (!('name' in data) || (data.name is string && data.name.size() >= 0 && data.name.size() < 100)) &&
+             (!('lastMessage' in data) || (data.lastMessage is string && data.lastMessage.size() < 10000)) &&
+             (!('lastActive' in data) || (data.lastActive is timestamp || data.lastActive == null)) &&
+             (!('color' in data) || (data.color is string && data.color.size() < 50)) &&
+             (!('code' in data) || (data.code is string && data.code.size() < 20)) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
     function isValidMessage(data) {
       return data.keys().hasAll(['chatId', 'senderId', 'senderName', 'senderAvatar', 'content', 'timestamp']) &&
              data.chatId is string &&
-             data.senderId == request.auth.uid &&
              data.senderName is string && data.senderName.size() < 100 &&
-             data.senderAvatar is string && data.senderAvatar.size() < 1000 &&
-             data.content is string && data.content.size() > 0 && data.content.size() < 5000 &&
+             data.senderAvatar is string && data.senderAvatar.size() < 1000000 &&
+             data.content is string && data.content.size() < 10000 &&
+             (data.content.size() > 0 || (data.type in ['image', 'file'])) &&
              data.timestamp is timestamp &&
              (!('type' in data) || data.type in ['text', 'image', 'file']) &&
-             (!('fileUrl' in data) || isValidUrl(data.fileUrl)) &&
-             (!('fileName' in data) || (data.fileName is string && data.fileName.size() < 255)) &&
+             (!('fileUrl' in data) || data.fileUrl == null || isValidUrl(data.fileUrl)) &&
+             (!('fileName' in data) || data.fileName == null || (data.fileName is string && data.fileName.size() < 255)) &&
              (!('isDeleted' in data) || data.isDeleted is bool) &&
+             (!('mentions' in data) || (data.mentions is list && data.mentions.size() <= 30)) &&
              (!('replyTo' in data) || (
                data.replyTo is map &&
                data.replyTo.keys().hasAll(['id', 'senderName', 'content']) &&
@@ -98,8 +106,8 @@ service cloud.firestore {
     function isValidFlashcard(data) {
       return data.keys().hasAll(['deckId', 'front', 'back']) &&
              data.deckId is string && data.deckId.size() > 0 && data.deckId.size() < 100 &&
-             data.front is string && data.front.size() > 0 && data.front.size() < 2000 &&
-             data.back is string && data.back.size() > 0 && data.back.size() < 2000 &&
+             data.front is string && data.front.size() > 0 && data.front.size() < 5000 &&
+             data.back is string && data.back.size() > 0 && data.back.size() < 5000 &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
@@ -107,7 +115,7 @@ service cloud.firestore {
       return data.keys().hasAll(['userId', 'date', 'text', 'completed']) &&
              data.userId == request.auth.uid &&
              data.date is string && data.date.matches("^\\d{4}-\\d{2}-\\d{2}$") &&
-             data.text is string && data.text.size() > 0 && data.text.size() < 500 &&
+             data.text is string && data.text.size() > 0 && data.text.size() < 1000 &&
              data.completed is bool &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
@@ -115,9 +123,14 @@ service cloud.firestore {
     function isValidSocialRelation(data) {
       return data.keys().hasAll(['uid', 'displayName', 'createdAt']) &&
              data.uid is string &&
-             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100 &&
+             data.displayName is string && data.displayName.size() >= 0 && data.displayName.size() < 100 &&
              (!('photoURL' in data) || isValidUrl(data.photoURL)) &&
              data.createdAt is timestamp;
+    }
+
+    function isValidPresence(data) {
+      return data.keys().hasAll(['lastSeen']) &&
+             data.lastSeen is timestamp;
     }
 
     match /users/{userId} {
@@ -165,7 +178,7 @@ service cloud.firestore {
 
     match /decks/{deckId} {
       allow read: if isAuthenticated() && (resource != null && (resource.data.userId == request.auth.uid || isAdmin()));
-      allow create: if isValidReviewDeck(request.resource.data);
+      allow create: if isAuthenticated() && isValidReviewDeck(request.resource.data);
       allow update: if isAuthenticated() && resource != null && (resource.data.userId == request.auth.uid || isAdmin()) && 
                       isValidReviewDeck(request.resource.data) &&
                       request.resource.data.userId == resource.data.userId;
@@ -183,7 +196,7 @@ service cloud.firestore {
 
     match /todos/{todoId} {
       allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if isValidTodo(request.resource.data);
+      allow create: if isAuthenticated() && isValidTodo(request.resource.data);
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && 
                       isValidTodo(request.resource.data) &&
                       request.resource.data.userId == resource.data.userId;
@@ -192,7 +205,7 @@ service cloud.firestore {
 
     match /materials/{materialId} {
       allow read: if isAuthenticated();
-      allow create: if isValidLearningMaterial(request.resource.data);
+      allow create: if isAuthenticated() && isValidLearningMaterial(request.resource.data);
       allow update: if isAuthenticated() && (resource.data.addedBy == request.auth.uid || isAdmin()) && 
                       isValidLearningMaterial(request.resource.data) &&
                       request.resource.data.addedBy == resource.data.addedBy;
@@ -211,24 +224,44 @@ service cloud.firestore {
         request.auth.uid in resource.data.participants
       );
 
-      allow create: if isValidChat(request.resource.data);
-      allow update: if isAuthenticated() && (request.auth.uid in resource.data.participants || isAdmin()) &&
-                      isValidChat(request.resource.data);
+      allow create: if isAuthenticated() && isValidChat(request.resource.data);
+      allow update: if isAuthenticated() && (
+                      resource.data.type == 'course' || 
+                      request.auth.uid in resource.data.participants || 
+                      isAdmin()
+                    ) && isValidChat(request.resource.data);
       allow delete: if isAdmin();
 
       match /messages/{messageId} {
         allow read: if isAuthenticated() && (
-          get(/databases/$(database)/documents/chats/$(chatId)).data.type == 'course' ||
-          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants
+          (exists(/databases/$(database)/documents/chats/$(chatId)) && (
+            get(/databases/$(database)/documents/chats/$(chatId)).data.type == 'course' ||
+            request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants
+          )) ||
+          chatId in ['uts', 'rph', 'tcw', 'mmw', 'pc', 'sts', 'eth', 'lwr', 'aa']
         );
-        allow create: if (
-          get(/databases/$(database)/documents/chats/$(chatId)).data.type == 'course' ||
-          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants
-        ) && isValidMessage(request.resource.data);
+        allow create: if isAuthenticated() && (
+          chatId in ['uts', 'rph', 'tcw', 'mmw', 'pc', 'sts', 'eth', 'lwr', 'aa'] ||
+          (exists(/databases/$(database)/documents/chats/$(chatId)) && (
+            get(/databases/$(database)/documents/chats/$(chatId)).data.type == 'course' ||
+            request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants
+          ))
+        ) && isValidMessage(request.resource.data) && request.resource.data.senderId == request.auth.uid;
         allow update: if isAuthenticated() && (resource.data.senderId == request.auth.uid || isAdmin()) &&
                         isValidMessage(request.resource.data) &&
                         request.resource.data.senderId == resource.data.senderId;
         allow delete: if isAuthenticated() && (resource.data.senderId == request.auth.uid || isAdmin());
+      }
+
+      match /presence/{presenceUserId} {
+        allow read: if isAuthenticated() && (
+          (exists(/databases/$(database)/documents/chats/$(chatId)) && (
+            get(/databases/$(database)/documents/chats/$(chatId)).data.type == 'course' ||
+            request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants
+          )) ||
+          chatId in ['uts', 'rph', 'tcw', 'mmw', 'pc', 'sts', 'eth', 'lwr', 'aa']
+        );
+        allow write: if isOwner(presenceUserId);
       }
     }
 

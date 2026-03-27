@@ -3,7 +3,7 @@ import { User } from 'firebase/auth';
 import { db, handleFirestoreError, OperationType, isQuotaExceeded } from '../firebase';
 import { doc, getDoc, setDoc, serverTimestamp, collection, onSnapshot } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
-import { User as UserIcon, Mail, Hash, FileText, Save, Camera, CheckCircle2, AlertCircle, Users, Heart, UserCheck } from 'lucide-react';
+import { User as UserIcon, Mail, Hash, FileText, Save, Camera, CheckCircle2, AlertCircle, Users, Heart, UserCheck, MessageCircle } from 'lucide-react';
 import SlideButton from '../components/SlideButton';
 import { useStudy } from '../contexts/StudyContext';
 import { UserProfile as UserProfileData } from '../types';
@@ -11,10 +11,11 @@ import { UserProfile as UserProfileData } from '../types';
 interface ProfileProps {
   user: User;
   targetUserId?: string;
+  onChatClick: (chatId: string) => void;
   key?: string;
 }
 
-export default function Profile({ user, targetUserId }: ProfileProps) {
+export default function Profile({ user, targetUserId, onChatClick }: ProfileProps) {
   const { isStudyMode, toggleStudyMode } = useStudy();
   const effectiveUserId = targetUserId || user.uid;
   const isOwnProfile = effectiveUserId === user.uid;
@@ -151,6 +152,24 @@ export default function Profile({ user, targetUserId }: ProfileProps) {
     }
   };
 
+  const handleStartChat = async () => {
+    if (!profileData.uid) return;
+    try {
+      const { getOrCreateDirectChat } = await import('../services/chatService');
+      const chatId = await getOrCreateDirectChat(
+        user.uid,
+        user.displayName || 'User',
+        user.photoURL || '',
+        profileData.uid,
+        profileData.displayName,
+        profileData.photoURL || ''
+      );
+      onChatClick(chatId);
+    } catch (error) {
+      console.error('Error starting chat:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -175,7 +194,18 @@ export default function Profile({ user, targetUserId }: ProfileProps) {
             {isOwnProfile ? 'Manage your personal information and account settings.' : 'View student information and study progress.'}
           </p>
         </div>
-        {isOwnProfile && <SlideButton label="Study Mode" isActive={isStudyMode} onToggle={toggleStudyMode} />}
+        <div className="flex items-center gap-3">
+          {!isOwnProfile && (
+            <button 
+              onClick={handleStartChat}
+              className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 transition-all flex items-center gap-2"
+            >
+              <MessageCircle className="w-4 h-4" />
+              Message
+            </button>
+          )}
+          {isOwnProfile && <SlideButton label="Study Mode" isActive={isStudyMode} onToggle={toggleStudyMode} />}
+        </div>
       </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">

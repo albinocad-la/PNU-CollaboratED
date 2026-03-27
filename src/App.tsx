@@ -22,6 +22,8 @@ import { auth, db, handleFirestoreError, OperationType, isQuotaExceeded } from '
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { doc, onSnapshot, setDoc, serverTimestamp, getDocFromServer } from 'firebase/firestore';
 import { updateGlobalPresence } from './services/presenceService';
+import { initializeCourseChats } from './services/chatService';
+import { courses } from './data';
 import { useStudy } from './contexts/StudyContext';
 import { useTheme } from './contexts/ThemeContext';
 import { motion, AnimatePresence } from 'motion/react';
@@ -107,6 +109,14 @@ export default function App() {
           if (snapshot.exists()) {
             publicProfile = snapshot.data();
             updateCombinedProfile();
+            
+            // Initialize course chats as soon as profile is available
+            initializeCourseChats(
+              courses, 
+              user.uid, 
+              publicProfile.displayName || user.displayName || 'You', 
+              publicProfile.photoURL || user.photoURL || ''
+            );
           } else {
             // Create profile if it doesn't exist
             const newProfile = {
@@ -218,9 +228,9 @@ export default function App() {
       case 'decks': return <ReviewDecks key="decks" user={user!} initialDeckId={selectedDeckId} />;
       case 'course-detail': return <CourseDetail key="course-detail" courseId={selectedCourseId} onBack={handleBack} onChatClick={handleChatClick} onReviewClick={handleReviewClick} />;
       case 'calendar': return <Calendar key="calendar" />;
-      case 'profile': return <Profile key="profile" user={user!} targetUserId={selectedProfileId} />;
+      case 'profile': return <Profile key="profile" user={user!} targetUserId={selectedProfileId} onChatClick={handleChatClick} />;
       case 'settings': return <Settings key="settings" user={user!} profile={profile} onLogout={handleLogout} />;
-      case 'community': return <Community key="community" currentUser={profile as UserProfile} onNavigate={handleNavigate} />;
+      case 'community': return <Community key="community" currentUser={profile as UserProfile} onNavigate={handleNavigate} onChatClick={handleChatClick} />;
       case 'search': return <SearchResults key="search" onNavigate={(view: View, id?: string) => {
         if (view === 'course-detail' && id) {
           handleCourseClick(id);

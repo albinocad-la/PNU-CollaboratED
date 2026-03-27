@@ -14,12 +14,15 @@ import {
   Globe,
   HelpCircle,
   CreditCard,
-  Loader2
+  Loader2,
+  Check
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import SlideButton from '../components/SlideButton';
 import { subscribeToBlockedUsers, unblockUser } from '../services/socialService';
 import { SocialRelation } from '../types';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from '../firebase';
 
 interface SettingsProps {
   user: any;
@@ -35,6 +38,15 @@ const Settings: React.FC<SettingsProps> = ({ user, profile, onLogout }) => {
   const [expandedQuestion, setExpandedQuestion] = useState<number | null>(null);
   const [blockedList, setBlockedList] = useState<SocialRelation[]>([]);
   const [loadingBlocked, setLoadingBlocked] = useState(true);
+  const [updatingProfile, setUpdatingProfile] = useState(false);
+  const [updateSuccess, setUpdateSuccess] = useState(false);
+  const [displayName, setDisplayName] = useState(profile?.displayName || user?.displayName || '');
+
+  useEffect(() => {
+    if (profile?.displayName) {
+      setDisplayName(profile.displayName);
+    }
+  }, [profile?.displayName]);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -52,6 +64,30 @@ const Settings: React.FC<SettingsProps> = ({ user, profile, onLogout }) => {
       await unblockUser(user.uid, targetUserId);
     } catch (error) {
       console.error('Error unblocking user:', error);
+    }
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!user?.uid || !displayName.trim()) return;
+    
+    setUpdatingProfile(true);
+    setUpdateSuccess(false);
+    
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        displayName: displayName.trim(),
+        displayNameLowercase: displayName.trim().toLowerCase(),
+        updatedAt: serverTimestamp()
+      });
+      
+      setUpdateSuccess(true);
+      setTimeout(() => setUpdateSuccess(false), 3000);
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+    } finally {
+      setUpdatingProfile(false);
     }
   };
 
@@ -168,7 +204,8 @@ const Settings: React.FC<SettingsProps> = ({ user, profile, onLogout }) => {
                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">Display Name</label>
                   <input 
                     type="text" 
-                    defaultValue={profile?.displayName || user?.displayName}
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
                     className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 transition-colors"
                   />
                 </div>
@@ -183,8 +220,25 @@ const Settings: React.FC<SettingsProps> = ({ user, profile, onLogout }) => {
                 </div>
               </div>
               
-              <button className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 dark:shadow-none">
-                Save Changes
+              <button 
+                onClick={handleUpdateProfile}
+                disabled={updatingProfile || !displayName.trim()}
+                className={`w-full py-4 rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2 ${
+                  updateSuccess 
+                    ? 'bg-emerald-500 text-white shadow-emerald-200 dark:shadow-none' 
+                    : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200 dark:shadow-none disabled:opacity-50 disabled:cursor-not-allowed'
+                }`}
+              >
+                {updatingProfile ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : updateSuccess ? (
+                  <>
+                    <Check className="w-5 h-5" />
+                    Changes Saved!
+                  </>
+                ) : (
+                  'Save Changes'
+                )}
               </button>
             </div>
           </motion.div>

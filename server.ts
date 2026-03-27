@@ -1,14 +1,10 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import multer from 'multer';
 import fs from 'fs';
 import FormData from 'form-data';
 import axios from 'axios';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -17,8 +13,7 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 const upload = multer({ 
-  dest: 'uploads/',
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+  dest: 'uploads/'
 });
 
 async function startServer() {

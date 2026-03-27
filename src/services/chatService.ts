@@ -12,7 +12,8 @@ import {
   limit,
   Timestamp,
   setDoc,
-  getDoc
+  getDoc,
+  arrayUnion
 } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType, isQuotaExceeded } from '../firebase';
 import { Chat, Message } from '../types';
@@ -65,25 +66,27 @@ export const sendMessage = async (
   chatId: string, 
   senderId: string, 
   senderName: string, 
-  senderAvatar: string, 
+  senderAvatar: string | null | undefined, 
   content: string,
   type: 'text' | 'image' | 'file' = 'text',
-  fileUrl?: string,
-  fileName?: string,
-  replyTo?: Message['replyTo']
+  fileUrl?: string | null,
+  fileName?: string | null,
+  replyTo?: Message['replyTo'],
+  mentions?: string[]
 ) => {
   const messageData: any = {
     chatId,
     senderId,
-    senderName,
-    senderAvatar,
-    content,
+    senderName: senderName || 'Anonymous',
+    senderAvatar: senderAvatar || '',
+    content: content || '',
     timestamp: serverTimestamp(),
     type,
   };
 
-  if (fileUrl !== undefined) messageData.fileUrl = fileUrl;
-  if (fileName !== undefined) messageData.fileName = fileName;
+  if (fileUrl) messageData.fileUrl = fileUrl;
+  if (fileName) messageData.fileName = fileName;
+  if (mentions && mentions.length > 0) messageData.mentions = mentions;
 
   if (replyTo) {
     messageData.replyTo = replyTo;
@@ -174,7 +177,7 @@ export const searchUsers = async (searchTerm: string, currentUserId: string) => 
   }
 };
 
-export const initializeCourseChats = async (courses: any[]) => {
+export const initializeCourseChats = async (courses: any[], userId?: string, userName?: string, userPhoto?: string) => {
   // Check if quota was previously exceeded
   if (isQuotaExceeded()) return;
 
@@ -185,14 +188,43 @@ export const initializeCourseChats = async (courses: any[]) => {
       
       if (!chatSnap.exists()) {
         await setDoc(chatRef, {
+          id: course.id,
           name: course.name,
           type: 'course',
-          participants: [],
+          participants: userId ? [userId] : [],
+          participantsInfo: (userId && userName) ? {
+            [userId]: { displayName: userName, photoURL: userPhoto || '' }
+          } : {},
           lastMessage: `Welcome to the ${course.code} group chat!`,
           lastActive: serverTimestamp(),
           color: course.color,
-          code: course.code
+          code: course.code,
+          createdAt: serverTimestamp()
         });
+      } else if (userId) {
+        const data = chatSnap.data();
+        const participants = data.participants || [];
+        const participantsInfo = data.participantsInfo || {};
+        
+        const updates: any = {};
+        let needsUpdate = false;
+
+        if (!participants.includes(userId)) {
+          updates.participants = arrayUnion(userId);
+          needsUpdate = true;
+        }
+
+        if (userName && !participantsInfo[userId]) {
+          updates[`participantsInfo.${userId}`] = {
+            displayName: userName,
+            photoURL: userPhoto || ''
+          };
+          needsUpdate = true;
+        }
+
+        if (needsUpdate) {
+          await updateDoc(chatRef, updates);
+        }
       }
     } catch (error) {
       console.warn(`Failed to initialize course chat for ${course.id}:`, error);

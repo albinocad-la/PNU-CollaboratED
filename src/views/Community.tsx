@@ -30,9 +30,10 @@ import { UserProfile, SocialRelation } from '../types';
 interface CommunityProps {
   currentUser: UserProfile;
   onNavigate: (view: any, id?: string) => void;
+  onChatClick: (chatId: string) => void;
 }
 
-const Community: React.FC<CommunityProps> = ({ currentUser, onNavigate }) => {
+const Community: React.FC<CommunityProps> = ({ currentUser, onNavigate, onChatClick }) => {
   const [activeTab, setActiveTab] = useState<'search' | 'friends' | 'following' | 'followers'>('search');
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
@@ -94,6 +95,23 @@ const Community: React.FC<CommunityProps> = ({ currentUser, onNavigate }) => {
     }
   };
 
+  const handleStartChat = async (targetUser: UserProfile | SocialRelation) => {
+    try {
+      const { getOrCreateDirectChat } = await import('../services/chatService');
+      const chatId = await getOrCreateDirectChat(
+        currentUser.uid,
+        currentUser.displayName,
+        currentUser.photoURL || '',
+        targetUser.uid,
+        targetUser.displayName,
+        (targetUser as any).photoURL || ''
+      );
+      onChatClick(chatId);
+    } catch (error) {
+      console.error('Error starting chat:', error);
+    }
+  };
+
   const UserCard: React.FC<{ user: UserProfile | SocialRelation, type: 'search' | 'list' }> = ({ user, type }) => (
     <motion.div
       layout
@@ -138,6 +156,14 @@ const Community: React.FC<CommunityProps> = ({ currentUser, onNavigate }) => {
       </div>
 
       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+        <button
+          onClick={(e) => { e.stopPropagation(); handleStartChat(user); }}
+          className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-xl transition-all"
+          title="Send Message"
+        >
+          <MessageCircle className="w-5 h-5" />
+        </button>
+
         {isFriend(user.uid) ? (
           <button
             onClick={(e) => { e.stopPropagation(); unfriend(currentUser.uid, user.uid); }}

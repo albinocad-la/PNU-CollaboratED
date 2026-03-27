@@ -15,7 +15,8 @@ import {
   ExternalLink,
   Video,
   File,
-  Trash2
+  Trash2,
+  MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -209,6 +210,13 @@ export default function CourseDetail({ courseId, onBack, onChatClick, onReviewCl
               <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20">
                 <div className="flex justify-between items-center mb-2">
                   <span className="font-semibold text-white/90">Course Overview</span>
+                  <button 
+                    onClick={() => onChatClick(courseId)}
+                    className="px-4 py-1.5 bg-white/20 hover:bg-white/30 rounded-xl text-xs font-bold transition-all flex items-center gap-2"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    Course Chat
+                  </button>
                 </div>
                 <p className="text-sm text-white/70">Access your study materials and collaborate with classmates to master this course.</p>
               </div>
