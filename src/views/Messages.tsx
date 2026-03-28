@@ -302,11 +302,15 @@ export default function Messages({ user, profile, initialChatId, onChatChange }:
       })));
       
       // Mark as read when new messages arrive and chat is active
-      markAsRead(activeChatId, user.uid);
+      if (activeChat) {
+        markAsRead(activeChatId, user.uid, activeChat.lastRead?.[user.uid], activeChat.lastActive);
+      }
     });
 
     // Mark as read when chat is opened
-    markAsRead(activeChatId, user.uid);
+    if (activeChat) {
+      markAsRead(activeChatId, user.uid, activeChat.lastRead?.[user.uid], activeChat.lastActive);
+    }
 
     return () => {
       unsubscribe();
@@ -322,7 +326,7 @@ export default function Messages({ user, profile, initialChatId, onChatChange }:
   useEffect(() => {
     if (activeChatId) {
       updateGroupPresence(activeChatId);
-      const interval = setInterval(() => updateGroupPresence(activeChatId), 60000);
+      const interval = setInterval(() => updateGroupPresence(activeChatId), 600000);
       return () => clearInterval(interval);
     }
   }, [activeChatId]);

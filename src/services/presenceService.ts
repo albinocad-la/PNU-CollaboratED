@@ -15,11 +15,11 @@ export const updateGlobalPresence = async () => {
   const user = auth.currentUser;
   if (!user) return;
 
-  // Throttle to once every 60 seconds across tabs using localStorage
+  // Throttle to once every 10 minutes across tabs using localStorage
   const lastUpdateKey = `last_presence_update_${user.uid}`;
   const lastUpdate = localStorage.getItem(lastUpdateKey);
   const now = Date.now();
-  if (lastUpdate && now - parseInt(lastUpdate) < 55000) {
+  if (lastUpdate && now - parseInt(lastUpdate) < 595000) {
     return;
   }
 
@@ -44,11 +44,11 @@ export const updateGroupPresence = async (groupId: string) => {
   const user = auth.currentUser;
   if (!user) return;
 
-  // Throttle to once every 60 seconds per group
+  // Throttle to once every 10 minutes per group
   const lastUpdateKey = `last_group_presence_${groupId}_${user.uid}`;
   const lastUpdate = localStorage.getItem(lastUpdateKey);
   const now = Date.now();
-  if (lastUpdate && now - parseInt(lastUpdate) < 55000) {
+  if (lastUpdate && now - parseInt(lastUpdate) < 595000) {
     return;
   }
 
@@ -75,11 +75,11 @@ export const useGroupOnlineStatus = (groupId: string) => {
 
   useEffect(() => {
     const path = `chats/${groupId}/presence`;
-    // Check for presence in the last 2 minutes
-    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+    // Check for presence in the last 15 minutes
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
     const q = query(
       collection(db, 'chats', groupId, 'presence'),
-      where('lastSeen', '>', Timestamp.fromDate(twoMinutesAgo))
+      where('lastSeen', '>', Timestamp.fromDate(fifteenMinutesAgo))
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -109,8 +109,8 @@ export const useUserOnlineStatus = (userId: string) => {
         const data = snapshot.data();
         if (data.lastSeen) {
           const lastSeen = data.lastSeen.toDate();
-          const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
-          setIsOnline(lastSeen > twoMinutesAgo);
+          const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+          setIsOnline(lastSeen > fifteenMinutesAgo);
         } else {
           setIsOnline(false);
         }

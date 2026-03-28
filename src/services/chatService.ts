@@ -178,10 +178,13 @@ export const searchUsers = async (searchTerm: string, currentUserId: string) => 
   }
 };
 
-export const initializeCourseChats = async (courses: any[], userId?: string, userName?: string, userPhoto?: string) => {
-  // Check if quota was previously exceeded
-  if (isQuotaExceeded()) return;
+let courseChatsInitialized = false;
 
+export const initializeCourseChats = async (courses: any[], userId?: string, userName?: string, userPhoto?: string) => {
+  // Check if quota was previously exceeded or already initialized in this session
+  if (isQuotaExceeded() || courseChatsInitialized) return;
+
+  courseChatsInitialized = true;
   for (const course of courses) {
     try {
       const chatRef = doc(db, 'chats', course.id);
@@ -492,9 +495,16 @@ export const deleteMessage = async (chatId: string, messageId: string) => {
   }
 };
 
-export const markAsRead = async (chatId: string, userId: string) => {
+export const markAsRead = async (chatId: string, userId: string, lastReadTimestamp?: any, lastActiveTimestamp?: any) => {
   // Check if quota was previously exceeded
   if (isQuotaExceeded()) return;
+
+  // Optimization: Only mark as read if lastRead is older than lastActive
+  if (lastReadTimestamp && lastActiveTimestamp) {
+    const lastRead = lastReadTimestamp instanceof Timestamp ? lastReadTimestamp.toMillis() : 0;
+    const lastActive = lastActiveTimestamp instanceof Timestamp ? lastActiveTimestamp.toMillis() : 0;
+    if (lastRead >= lastActive) return;
+  }
 
   try {
     const chatRef = doc(db, 'chats', chatId);

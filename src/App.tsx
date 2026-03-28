@@ -61,10 +61,10 @@ export default function App() {
       // Initial update
       updateGlobalPresence();
       
-      // Heartbeat every 60 seconds
+      // Heartbeat every 10 minutes
       const interval = setInterval(() => {
         updateGlobalPresence();
-      }, 60000);
+      }, 600000);
       
       return () => clearInterval(interval);
     }

@@ -4,7 +4,7 @@ import { Clock, CheckCircle2, AlertCircle, BookOpen, Layers, ArrowRight, Message
 import { motion, AnimatePresence } from 'motion/react';
 import { User } from 'firebase/auth';
 import { db } from '../firebase';
-import { collection, query, where, Timestamp, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, Timestamp, onSnapshot, orderBy, limit, getDocs } from 'firebase/firestore';
 import SlideButton from '../components/SlideButton';
 import { useStudy } from '../contexts/StudyContext';
 import { ReviewDeck, StudySession } from '../types';
@@ -65,7 +65,8 @@ export default function Dashboard({ onCourseClick, onChatClick, onViewAllCourses
     const qSessions = query(
       sessionsRef,
       where('startTime', '>=', subDays(now, 30)),
-      orderBy('startTime', 'desc')
+      orderBy('startTime', 'desc'),
+      limit(100)
     );
 
     const unsubSessions = onSnapshot(qSessions, (snapshot) => {
@@ -117,39 +118,34 @@ export default function Dashboard({ onCourseClick, onChatClick, onViewAllCourses
     });
 
     // 4. Fetch Collaborative Feed (Recent sessions from others)
-    // In a real app, we'd filter by friends. For now, we'll show recent public-ish activity.
-    // We'll query sessions across all users (if allowed by rules) or just mock based on real user names.
-    // Since we don't have a global activity feed, let's try to get some recent sessions.
-    const qGlobalSessions = query(collection(db, 'sessions'), orderBy('createdAt', 'desc'), limit(5));
-    // Wait, the blueprint says sessions are under /users/{userId}/sessions.
-    // So we can't easily query all sessions without a root collection.
-    // Let's assume there's a root 'sessions' collection for global activity if we want a feed.
-    // If not, we'll just use the user's own recent activity for now but label it "Your Activity".
-    // Or, better: fetch friends first.
-    
-    const unsubFeed = onSnapshot(query(collection(db, 'users'), limit(10)), async (userSnap) => {
-      const activities: CollaborativeActivity[] = [];
-      const userDocs = userSnap.docs.filter(d => d.id !== user.uid);
-      
-      for (const uDoc of userDocs.slice(0, 3)) {
-        const uData = uDoc.data();
-        // Just mock some activity based on real users found in DB
-        activities.push({
-          user: uData.displayName || 'A student',
-          action: 'is currently studying',
-          target: 'Focus Mode',
-          time: 'Active now',
-          avatar: uData.photoURL || `https://ui-avatars.com/api/?name=${uData.displayName}`
-        });
+    const fetchFeed = async () => {
+      try {
+        const userSnap = await getDocs(query(collection(db, 'users'), limit(10)));
+        const activities: CollaborativeActivity[] = [];
+        const userDocs = userSnap.docs.filter(d => d.id !== user.uid);
+        
+        for (const uDoc of userDocs.slice(0, 3)) {
+          const uData = uDoc.data();
+          activities.push({
+            user: uData.displayName || 'A student',
+            action: 'is currently studying',
+            target: 'Focus Mode',
+            time: 'Active now',
+            avatar: uData.photoURL || `https://ui-avatars.com/api/?name=${uData.displayName}`
+          });
+        }
+        setCollaborativeFeed(activities);
+      } catch (error) {
+        console.error('Error fetching feed:', error);
       }
-      setCollaborativeFeed(activities);
-    });
+    };
+
+    fetchFeed();
 
     return () => {
       unsubSessions();
       unsubDecks();
       unsubTodos();
-      unsubFeed();
     };
   }, [user]);
 
